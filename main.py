@@ -69,10 +69,9 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
 
 
 
-### === PRZYCISK POTWIERDZENIA WYNIKU === ###
 class ConfirmView(View):
     def __init__(self, player1, player2, s1, s2, match_key):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
         self.player1 = player1
         self.player2 = player2
         self.s1 = s1
@@ -90,39 +89,35 @@ class ConfirmView(View):
             await interaction.response.send_message("❌ Ten wynik już został potwierdzony.", ephemeral=True)
             return
 
-        p1 = self.player1
-        p2 = self.player2
-        s1 = self.s1
-        s2 = self.s2
-
+        # Aktualizacja statystyk
         p1_stats = {
-            "wins": 1 if s1 > s2 else 0,
-            "losses": 1 if s1 < s2 else 0,
-            "draws": 1 if s1 == s2 else 0,
-            "goals_scored": s1,
-            "goals_conceded": s2,
+            "wins": 1 if self.s1 > self.s2 else 0,
+            "losses": 1 if self.s1 < self.s2 else 0,
+            "draws": 1 if self.s1 == self.s2 else 0,
+            "goals_scored": self.s1,
+            "goals_conceded": self.s2,
         }
-
         p2_stats = {
-            "wins": 1 if s2 > s1 else 0,
-            "losses": 1 if s2 < s1 else 0,
-            "draws": 1 if s2 == s1 else 0,
-            "goals_scored": s2,
-            "goals_conceded": s1,
+            "wins": 1 if self.s2 > self.s1 else 0,
+            "losses": 1 if self.s2 < self.s1 else 0,
+            "draws": 1 if self.s2 == self.s1 else 0,
+            "goals_scored": self.s2,
+            "goals_conceded": self.s1,
         }
 
-        await update_player_stats(str(p1), **p1_stats)
-        await update_player_stats(str(p2), **p2_stats)
+        await update_player_stats(str(self.player1), **p1_stats)
+        await update_player_stats(str(self.player2), **p2_stats)
         pending_results[self.match_key]["confirmed"] = True
 
-        if s1 > s2:
-            msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
-        elif s2 > s1:
-            msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
+        if self.s1 > self.s2:
+            msg = f"<@{self.player1}> wygrał z <@{self.player2}> {self.s1}-{self.s2}!"
+        elif self.s2 > self.s1:
+            msg = f"<@{self.player2}> wygrał z <@{self.player1}> {self.s2}-{self.s1}!"
         else:
-            msg = f"🤝 Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
+            msg = f"🤝 Remis {self.s1}-{self.s2} między <@{self.player1}> a <@{self.player2}>."
 
-        await interaction.response.edit_message(content=msg, view=None)
+        view = RematchView(self.player1, self.player2)
+        await interaction.response.edit_message(content=msg + "\nKliknij poniżej, aby zagrać rewanż.", view=view)
 
     @discord.ui.button(label="Odrzuć wynik", style=discord.ButtonStyle.danger)
     async def reject(self, interaction: Interaction, button: discord.ui.Button):
@@ -130,11 +125,27 @@ class ConfirmView(View):
             await interaction.response.send_message("❌ Nie jesteś uczestnikiem tego meczu!", ephemeral=True)
             return
 
-        # Usuwamy wynik z pending_results, żeby można było zgłosić ponownie
         if self.match_key in pending_results:
             del pending_results[self.match_key]
 
-        await interaction.response.edit_message(content="❌ Wynik został odrzucony. Możesz zgłosić wynik ponownie.", view=None)
+        view = RematchView(self.player1, self.player2)
+        await interaction.response.edit_message(content="❌ Wynik został odrzucony. Możesz zgłosić wynik ponownie.", view=view)
+
+    @discord.ui.button(label="Rewanż", style=discord.ButtonStyle.secondary)
+    async def rematch(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id not in [self.player1, self.player2]:
+            await interaction.response.send_message("❌ Tylko gracze mogą zainicjować rewanż.", ephemeral=True)
+            return
+
+        opponent = self.player2 if interaction.user.id == self.player1 else self.player1
+
+        view = RematchAcceptView(challenger=interaction.user.id, opponent=opponent)
+        await interaction.response.send_message(
+            f"<@{opponent}>, <@{interaction.user.id}> zaproponował rewanż. Kliknij, aby zaakceptować.",
+            view=view,
+            ephemeral=False
+        )
+
 
 ### === PRZYCISK REWANŻU Z AKCEPTACJĄ === ###
 class RematchView(ui.View):
