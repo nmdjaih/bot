@@ -229,7 +229,6 @@ class AcceptMatchView(ui.View):
 # --- Komendy ---
 
 @bot.tree.command(name="gram", description="Znajdź przeciwnika do meczu")
-@bot.tree.command(name="gram", description="Szukaj przeciwnika")
 @app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
 async def gram(interaction: Interaction, czas: Optional[int] = 3):
     role = discord.utils.get(interaction.guild.roles, name="Gracz")
