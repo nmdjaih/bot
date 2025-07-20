@@ -45,3 +45,7 @@ async def update_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_s
             "goals_conceded": goals_conceded,
         }
         supabase.table("player_stats").insert(new_stats).execute()
+
+async def get_all_stats():
+    response = supabase.table("player_stats").select("*").execute()
+    return response.data if response.data else []
