@@ -104,7 +104,7 @@ class ConfirmView(ui.View):
         view = RematchView(player1=int(p1), player2=int(p2))
         await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
 
-### === PRZYCISK REWANŻU === ###
+### === PRZYCISK REWANŻU Z AKCEPTACJĄ === ###
 class RematchView(ui.View):
     def __init__(self, player1, player2):
         super().__init__(timeout=60)
@@ -118,15 +118,36 @@ class RematchView(ui.View):
             return
 
         opponent = self.player2 if interaction.user.id == self.player1 else self.player1
-        active_matches[self.player1] = opponent
-        active_matches[self.player2] = self.player1
 
-        await interaction.response.send_message(f"🎯 Rewanż rozpoczęty między <@{self.player1}> i <@{self.player2}>!")
+        # Wyślij prośbę o akceptację rewanżu do przeciwnika
+        view = RematchAcceptView(challenger=interaction.user.id, opponent=opponent)
+        await interaction.response.send_message(
+            f"<@{opponent}>, <@{interaction.user.id}> zaproponował rewanż. Kliknij, aby zaakceptować.",
+            view=view,
+            ephemeral=False
+        )
 
-        await asyncio.sleep(2)
-        await interaction.followup.send(
-            f"<@{self.player1}> lub <@{self.player2}>, możecie wpisać wynik meczu.",
-            view=ResultView(self.player1, self.player2)
+### === PRZYCISK AKCEPTACJI REWANŻU === ###
+class RematchAcceptView(ui.View):
+    def __init__(self, challenger: int, opponent: int, timeout=60):
+        super().__init__(timeout=timeout)
+        self.challenger = challenger
+        self.opponent = opponent
+
+    @ui.button(label="Akceptuj rewanż", style=discord.ButtonStyle.success)
+    async def accept_rematch(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id != self.opponent:
+            await interaction.response.send_message("❌ Tylko przeciwnik może zaakceptować rewanż.", ephemeral=True)
+            return
+
+        # Dodaj do aktywnych meczów
+        active_matches[self.challenger] = self.opponent
+        active_matches[self.opponent] = self.challenger
+
+        await interaction.response.send_message(
+            f"🎮 Rewanż między <@{self.challenger}> a <@{self.opponent}> został zaakceptowany!\n"
+            "Możecie wpisać wynik meczu.",
+            view=ResultView(self.challenger, self.opponent)
         )
 
 ### === WIDOK WPISYWANIA WYNIKU === ###
@@ -178,7 +199,7 @@ class MatchAcceptView(ui.View):
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
 async def statystyki(interaction: Interaction):
-    stats = get_player_stats(str(interaction.user.id))
+    stats = await get_player_stats(str(interaction.user.id))  # <--- tu await
     embed = discord.Embed(title=f"Statystyki {interaction.user.display_name}", color=discord.Color.blue())
     embed.add_field(name="Wygrane", value=str(stats["wins"]))
     embed.add_field(name="Przegrane", value=str(stats["losses"]))
@@ -187,22 +208,27 @@ async def statystyki(interaction: Interaction):
     embed.add_field(name="Gole stracone", value=str(stats["goals_conceded"]))
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+
 @bot.tree.command(name="ranking", description="Wyświetl ranking")
 async def ranking(interaction: Interaction):
-    data = get_all_stats()
-    sorted_players = sorted(data, key=lambda x: (x["wins"] / max((x["wins"] + x["losses"] + x["draws"] or 1)), 0), reverse=True)
+    data = await get_all_stats()  # pamiętaj, że get_all_stats jest async!
+    # Sortujemy według wskaźnika wygranych (win ratio)
+    def win_ratio(player):
+        total_games = player["wins"] + player["losses"] + player["draws"]
+        return player["wins"] / total_games if total_games > 0 else 0
+
+    sorted_players = sorted(data, key=win_ratio, reverse=True)
 
     embed = discord.Embed(title="🏆 Ranking Graczy", color=discord.Color.gold())
     for i, player in enumerate(sorted_players[:10], 1):
-        user = await bot.fetch_user(int(player["user_id"]))
-        win_ratio = player["wins"] / max((player["wins"] + player["losses"] + player["draws"] or 1))
+        user = await bot.fetch_user(int(player["player_id"]))
+        ratio = win_ratio(player)
         embed.add_field(
             name=f"#{i} {user.name}",
-            value=f"✅ {player['wins']} 🟥 {player['losses']} 🤝 {player['draws']} | 🎯 {win_ratio:.1%}",
+            value=f"✅ {player['wins']} 🟥 {player['losses']} 🤝 {player['draws']} | 🎯 {ratio:.1%}",
             inline=False
         )
     await interaction.response.send_message(embed=embed)
-
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
 async def on_ready():
