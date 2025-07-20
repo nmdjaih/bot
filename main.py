@@ -2,11 +2,11 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui, Interaction
 import os
-import json
-from dotenv import load_dotenv
 from typing import Optional, cast
+import asyncio
 
-load_dotenv()
+# SUPABASE importy i setup
+from supabase_stats import get_player_stats, upsert_player_stats
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -15,49 +15,9 @@ intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # --- Dane globalne ---
-active_matches = {}  # user_id (str) -> {'opponent': user_id, 'searching': bool}
+active_matches = {}  # user_id (int) -> {'opponent': user_id (int), 'searching': bool}
 pending_results = {}  # tuple(player1, player2) -> wynik
 confirmed_matches = set()  # set of tuples (player1, player2)
-stats_file = "stats.json"
-stats = {}
-
-def load_stats():
-    global stats
-    try:
-        with open(stats_file, "r") as f:
-            stats = json.load(f)
-    except FileNotFoundError:
-        stats = {}
-
-def save_stats():
-    with open(stats_file, "w") as f:
-        json.dump(stats, f, indent=4)
-
-load_stats()
-
-def update_player_stats(user_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
-    s = stats.get(user_id, {
-        "wins": 0,
-        "losses": 0,
-        "draws": 0,
-        "goals_scored": 0,
-        "goals_conceded": 0,
-    })
-    s["wins"] += wins
-    s["losses"] += losses
-    s["draws"] += draws
-    s["goals_scored"] += goals_scored
-    s["goals_conceded"] += goals_conceded
-    stats[user_id] = s
-
-def get_player_stats(user_id: str):
-    return stats.get(user_id, {
-        "wins": 0,
-        "losses": 0,
-        "draws": 0,
-        "goals_scored": 0,
-        "goals_conceded": 0,
-    })
 
 # --- UI Komponenty ---
 
@@ -132,6 +92,10 @@ class ConfirmView(ui.View):
     def __init__(self, match):
         super().__init__(timeout=None)
         self.match = match
+        self.rematch_button = ui.Button(label="Zagraj rewanż", style=discord.ButtonStyle.secondary)
+        self.rematch_button.callback = self.rematch_callback
+        self.add_item(self.rematch_button)
+        self.rematch_button.disabled = True  # na start wyłączony
 
     @ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
     async def confirm_button(self, interaction: Interaction, button: ui.Button):
@@ -160,33 +124,64 @@ class ConfirmView(ui.View):
 
         confirmed_matches.add(match_key)
 
-        update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
-        update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+        # --- SUPABASE: aktualizacja statystyk ---
+        await upsert_player_stats(p1, goals_scored=s1, goals_conceded=s2)
+        await upsert_player_stats(p2, goals_scored=s2, goals_conceded=s1)
 
         if s1 > s2:
-            update_player_stats(p1, wins=1)
-            update_player_stats(p2, losses=1)
+            await upsert_player_stats(p1, wins=1)
+            await upsert_player_stats(p2, losses=1)
             result_text = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
         elif s2 > s1:
-            update_player_stats(p2, wins=1)
-            update_player_stats(p1, losses=1)
+            await upsert_player_stats(p2, wins=1)
+            await upsert_player_stats(p1, losses=1)
             result_text = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
         else:
-            update_player_stats(p1, draws=1)
-            update_player_stats(p2, draws=1)
+            await upsert_player_stats(p1, draws=1)
+            await upsert_player_stats(p2, draws=1)
             result_text = f"Remis {s1}-{s2} pomiędzy <@{p1}> a <@{p2}>."
 
-        save_stats()
+        # Usuń z aktywnych meczy
+        if self.match["player1"] in active_matches:
+            del active_matches[self.match["player1"]]
+        if self.match["player2"] in active_matches:
+            del active_matches[self.match["player2"]]
 
-        if p1 in active_matches:
-            del active_matches[p1]
-        if p2 in active_matches:
-            del active_matches[p2]
+        # Odblokuj przycisk rewanżu
+        self.rematch_button.disabled = False
+        await interaction.response.edit_message(
+            content=f"✅ Wynik potwierdzony i zapisany!\n{result_text}",
+            view=self,
+        )
+
+    async def rematch_callback(self, interaction: Interaction):
+        user_id = interaction.user.id
+        p1 = self.match["player1"]
+        p2 = self.match["player2"]
+
+        if user_id not in (p1, p2):
+            await interaction.response.send_message(
+                "❌ Tylko gracze w meczu mogą rozpocząć rewanż.", ephemeral=True
+            )
+            return
+
+        if p1 in active_matches or p2 in active_matches:
+            await interaction.response.send_message(
+                "❌ Jeden z graczy już szuka meczu.", ephemeral=True
+            )
+            return
+
+        # Ustaw obaj jako aktywnych z przeciwnikiem i searching False, czyli mecz gotowy
+        active_matches[p1] = {"searching": False, "opponent": p2}
+        active_matches[p2] = {"searching": False, "opponent": p1}
 
         await interaction.response.send_message(
-            f"✅ Wynik potwierdzony i zapisany!\n{result_text}"
+            f"🔁 <@{p1}> i <@{p2}> rozpoczęli rewanż! Powodzenia! 🔥", ephemeral=False
         )
-        self.stop()
+
+        # Zablokuj przycisk rewanżu
+        self.rematch_button.disabled = True
+        await interaction.message.edit(view=self)
 
 class AcceptMatchView(ui.View):
     def __init__(self, challenger: discord.Member, timeout: float):
@@ -233,122 +228,90 @@ class AcceptMatchView(ui.View):
 
 # --- Komendy ---
 
-@bot.tree.command(name="gram", description="Szukaj przeciwnika")
-@app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
-async def gram(interaction: Interaction, czas: Optional[int] = 3):
-    role = discord.utils.get(interaction.guild.roles, name="Gracz")
-    if role is None:
-        await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
+@bot.tree.command(name="gram", description="Znajdź przeciwnika do meczu")
+async def gram(interaction: discord.Interaction):
+    user_id = interaction.user.id
+
+    if user_id in active_matches and active_matches[user_id]["searching"]:
+        await interaction.response.send_message("Jesteś już w kolejce na mecz.", ephemeral=True)
         return
 
-    view = AcceptMatchView(interaction.user, timeout=czas * 60)
-    
-    await interaction.response.send_message(
-        f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz. "
-        f"Czas oczekiwania: {czas} minut.",
-        view=view,
-        ephemeral=False,
-    )
+    # Szukaj przeciwnika, który też szuka
+    opponent_id = None
+    for uid, info in active_matches.items():
+        if info["searching"] and uid != user_id:
+            opponent_id = uid
+            break
 
-    view.message = await interaction.original_response()
-@bot.tree.command(name="ranking", description="Wyświetl ranking graczy")
-async def ranking(ctx):
-    # Sprawdzenie czy użytkownik ma rolę "Gracz"
-    has_role = discord.utils.get(ctx.author.roles, name="Gracz")
-    if not has_role:
-        await ctx.send("❌ Ta komenda jest dostępna tylko dla osób z rolą **Gracz**.")
+    if opponent_id:
+        # Para graczy znalezionych, tworzymy mecz
+        active_matches[user_id] = {"searching": False, "opponent": opponent_id}
+        active_matches[opponent_id] = {"searching": False, "opponent": user_id}
+
+        await interaction.response.send_message(
+            f"🎉 Znaleziono przeciwnika: <@{opponent_id}>! Mecz gotowy, powodzenia! 🔥"
+        )
+    else:
+        # Nikt nie szuka, dodaj siebie do kolejki
+        active_matches[user_id] = {"searching": True, "opponent": None}
+        view = AcceptMatchView(challenger=interaction.user, timeout=60)
+        await interaction.response.send_message(
+            "⏳ Szukam przeciwnika... (lub ktoś może zaakceptować twój mecz)",
+            view=view,
+        )
+        view.message = await interaction.original_response()
+
+@bot.tree.command(name="ranking", description="Pokaż ranking graczy")
+async def ranking(interaction: discord.Interaction):
+    stats = await get_player_stats()
+    if not stats:
+        await interaction.response.send_message("Brak statystyk w bazie.", ephemeral=True)
         return
 
-    with open("stats.json", "r") as f:
-        stats = json.load(f)
-
-    ranking_list = []
-
-    for user_id, data in stats.items():
-        wins = data.get("wins", 0)
-        losses = data.get("losses", 0)
-        draws = data.get("draws", 0)
-        total_games = wins + losses + draws
-
-        if total_games > 0:
-            winratio = wins / total_games
-        else:
-            winratio = 0
-
-        ranking_list.append((user_id, winratio, wins, total_games))
-
-    # Sortuj po winratio
-    ranking_list.sort(key=lambda x: x[1], reverse=True)
-
-    # Tworzenie embed
-    embed = discord.Embed(
-        title="🏆 Ranking Graczy – WinRatio",
-        description="Gracze posortowani według skuteczności zwycięstw",
-        color=discord.Color.blurple()
+    # Posortuj wg zwycięstw malejąco, potem remisów itd.
+    sorted_stats = sorted(
+        stats,
+        key=lambda x: (x["wins"], x["draws"], -x["losses"]),
+        reverse=True,
     )
+    lines = []
+    for i, player in enumerate(sorted_stats, start=1):
+        lines.append(
+            f"{i}. <@{player['player_id']}> - W: {player['wins']}, P: {player['losses']}, R: {player['draws']}, "
+            f"Gole: {player['goals_scored']}-{player['goals_conceded']}"
+        )
 
-    place_emojis = ["🥇", "🥈", "🥉"]  # Emoji dla top 3
+    await interaction.response.send_message("🏆 Ranking graczy:\n" + "\n".join(lines))
 
-    for i, (user_id, ratio, wins, games) in enumerate(ranking_list, 1):
-        try:
-            user = await bot.fetch_user(int(user_id))
-            emoji = place_emojis[i - 1] if i <= 3 else f"#{i:02d}"
-
-            # Przykład: 🥇 GraczXYZ — 8/10 wygrane (80%)
-            embed.add_field(
-                name=f"{emoji} {user.name}",
-                value=f"🎮 Mecze: `{games}`\n✅ Wygrane: `{wins}`\n📈 WinRatio: `{ratio:.1%}`",
-                inline=False
-            )
-        except:
-            continue
-
-    embed.set_footer(text="Ranking aktualny na podstawie statystyk w stats.json")
-
-    await ctx.send(embed=embed)
-
-@bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
-async def statystyki(interaction: Interaction):
+@bot.tree.command(name="statystyki", description="Pokaż swoje statystyki")
+async def statystyki(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
-    s = get_player_stats(user_id)
-    embed = discord.Embed(title=f"Statystyki gracza {interaction.user.display_name}", color=discord.Color.blue())
-    embed.add_field(name="Wygrane", value=str(s["wins"]))
-    embed.add_field(name="Przegrane", value=str(s["losses"]))
-    embed.add_field(name="Remisy", value=str(s["draws"]))
-    embed.add_field(name="Gole zdobyte", value=str(s["goals_scored"]))
-    embed.add_field(name="Gole stracone", value=str(s["goals_conceded"]))
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    stats = await get_player_stats(user_id)
+    if not stats:
+        await interaction.response.send_message("Nie masz jeszcze żadnych statystyk.", ephemeral=True)
+        return
 
+    p = stats[0]
+    text = (
+        f"📊 Statystyki dla <@{user_id}>:\n"
+        f"Wygrane: {p['wins']}\n"
+        f"Przegrane: {p['losses']}\n"
+        f"Remisy: {p['draws']}\n"
+        f"Gole zdobyte: {p['goals_scored']}\n"
+        f"Gole stracone: {p['goals_conceded']}"
+    )
+    await interaction.response.send_message(text, ephemeral=True)
+
+# --- Run ---
 @bot.event
 async def on_ready():
-    print(f"Zalogowano jako {bot.user} (ID: {bot.user.id})")
+    print(f"Bot zalogowany jako {bot.user} (ID: {bot.user.id})")
     try:
         synced = await bot.tree.sync()
-        print(f"Zsynchronizowano {len(synced)} komend")
+        print(f"Slash commands synced: {len(synced)}")
     except Exception as e:
-        print(f"Błąd synchronizacji komend: {e}")
+        print(f"Błąd podczas synca slash commands: {e}")
 
 if __name__ == "__main__":
-    TOKEN = os.getenv("TOKEN")
-    if not TOKEN:
-        print("Błąd: Brak tokena w .env")
-        exit(1)
-    
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    class DummyHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'Discord bot is running.')
-
-    def start_web_server():
-        port = int(os.environ.get("PORT", 10000))
-        server = HTTPServer(("0.0.0.0", port), DummyHandler)
-        print(f"Fake web server running on port {port}")
-        server.serve_forever()
-
-    threading.Thread(target=start_web_server, daemon=True).start()
-
+    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
     bot.run(TOKEN)
