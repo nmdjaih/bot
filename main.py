@@ -296,7 +296,7 @@ async def on_ready():
         print(f"Błąd synchronizacji komend: {e}")
 
 if __name__ == "__main__":
-    TOKEN = os.getenv("DISCORD_TOKEN")
+    TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         print("Błąd: Brak tokena w .env")
         exit(1)
