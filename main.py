@@ -251,7 +251,7 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
     )
 
     view.message = await interaction.original_response()
-@bot.tree.command()
+@bot.tree.command(name="ranking", description="Wyświetl ranking graczy")
 async def ranking(ctx):
     # Sprawdzenie czy użytkownik ma rolę "Gracz"
     has_role = discord.utils.get(ctx.author.roles, name="Gracz")
