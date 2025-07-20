@@ -237,13 +237,23 @@ class AcceptMatchView(ui.View):
 @bot.tree.command(name="gram", description="Szukaj przeciwnika")
 @app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
 async def gram(interaction: Interaction, czas: Optional[int] = 3):
+    # Znajdź rolę "Gracz"
+    role = discord.utils.get(interaction.guild.roles, name="Gracz")
+    
+    # Jeśli rola nie została znaleziona, wyślij błąd
+    if role is None:
+        await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
+        return
+
     view = AcceptMatchView(interaction.user, timeout=czas * 60)
-    message = await interaction.response.send_message(
-        f"<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk aby zaakceptować mecz. "
+    
+    await interaction.response.send_message(
+        f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz. "
         f"Czas oczekiwania: {czas} minut.",
         view=view,
         ephemeral=False,
     )
+
     view.message = await interaction.original_response()
 
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
