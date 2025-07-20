@@ -206,26 +206,34 @@ async def ranking(interaction: Interaction):
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
 async def on_ready():
-    print(f"Zalogowano jako {bot.user}")
+    print(f"Zalogowano jako {bot.user} (ID: {bot.user.id})")
     try:
         synced = await bot.tree.sync()
         print(f"Zsynchronizowano {len(synced)} komend")
     except Exception as e:
-        print("Błąd synchronizacji:", e)
-
-# Wymagane przez Render Web Service — serwer HTTP
-async def start_webserver():
-    from aiohttp import web
-    async def handle(_): return web.Response(text="Bot działa!")
-    app = web.Application()
-    app.add_routes([web.get("/", handle)])
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
-    await site.start()
+        print(f"Błąd synchronizacji komend: {e}")
 
 if __name__ == "__main__":
     TOKEN = os.getenv("TOKEN")
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_webserver())
+    if not TOKEN:
+        print("Błąd: Brak tokena w .env")
+        exit(1)
+    
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class DummyHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'Discord bot is running.')
+
+    def start_web_server():
+        port = int(os.environ.get("PORT", 10000))
+        server = HTTPServer(("0.0.0.0", port), DummyHandler)
+        print(f"Fake web server running on port {port}")
+        server.serve_forever()
+
+    threading.Thread(target=start_web_server, daemon=True).start()
+
     bot.run(TOKEN)
