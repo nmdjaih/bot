@@ -1,26 +1,27 @@
+### Główny plik main.py z integracją Supabase, logiką matchmakingu, rewanżem i obsługą Render ###
+
 import discord
 from discord.ext import commands
 from discord import app_commands, ui, Interaction
 import os
-from typing import Optional, cast
+from dotenv import load_dotenv
+from typing import Optional
+from superbase_stats import get_player_stats, update_player_stats, get_all_stats
 import asyncio
-from aiohttp import web
-# SUPABASE importy i setup
-from supabase_stats import get_player_stats, upsert_player_stats
+import aiohttp
+
+load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# --- Dane globalne ---
-active_matches = {}  # user_id (int) -> {'opponent': user_id (int), 'searching': bool}
-pending_results = {}  # tuple(player1, player2) -> wynik
-confirmed_matches = set()  # set of tuples (player1, player2)
+active_matches = {}  # user_id: opponent_id
+pending_results = {}  # match_key: wynik
+confirmed_matches = set()  # para potwierdzonych meczy
 
-# --- UI Komponenty ---
-
+### === MODAL: WPROWADZENIE WYNIKU === ###
 class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
     score1 = ui.TextInput(label="Gole pierwszego gracza", style=discord.TextStyle.short)
     score2 = ui.TextInput(label="Gole drugiego gracza", style=discord.TextStyle.short)
@@ -35,25 +36,18 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
         match_key = tuple(sorted((p1, p2)))
 
         if match_key in pending_results:
-            await interaction.response.send_message(
-                "❌ Wynik dla tego meczu jest już zgłoszony i czeka na potwierdzenie.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("❌ Wynik już zgłoszony.", ephemeral=True)
             return
 
         try:
             s1 = int(self.score1.value)
             s2 = int(self.score2.value)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ Gole muszą być liczbą całkowitą.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Gole muszą być liczbami.", ephemeral=True)
             return
 
         if interaction.user.id not in (p1, p2):
-            await interaction.response.send_message(
-                "❌ Tylko gracze w meczu mogą wpisać wynik.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Nie jesteś graczem tego meczu.", ephemeral=True)
             return
 
         pending_results[match_key] = {
@@ -62,54 +56,24 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             "score1": s1,
             "score2": s2,
             "reported_by": interaction.user.id,
-            "confirmed_by": None,
         }
 
         view = ConfirmView(pending_results[match_key])
         await interaction.response.send_message(
-            f"Wynik zgłoszony przez {interaction.user.mention}: {s1} - {s2}\n"
-            "Drugi gracz, proszę potwierdź wynik klikając poniższy przycisk.",
-            view=view,
-            ephemeral=False,
+            f"Wynik zgłoszony: {s1} - {s2}\nDrugi gracz proszony o potwierdzenie.",
+            view=view
         )
 
-class EnterScoreButton(ui.Button):
-    def __init__(self, match_info):
-        super().__init__(label="Wpisz wynik", style=discord.ButtonStyle.primary)
-        self.match_info = match_info
-
-    async def callback(self, interaction: Interaction):
-        if interaction.user.id not in (self.match_info["player1"], self.match_info["player2"]):
-            await interaction.response.send_message(
-                "❌ Tylko gracze w meczu mogą wpisać wynik.", ephemeral=True
-            )
-            return
-
-        modal = ScoreModal(self.match_info)
-        await interaction.response.send_modal(modal)
-
+### === PRZYCISK POTWIERDZENIA WYNIKU === ###
 class ConfirmView(ui.View):
     def __init__(self, match):
         super().__init__(timeout=None)
         self.match = match
-        self.rematch_button = ui.Button(label="Zagraj rewanż", style=discord.ButtonStyle.secondary)
-        self.rematch_button.callback = self.rematch_callback
-        self.add_item(self.rematch_button)
-        self.rematch_button.disabled = True  # na start wyłączony
 
     @ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
     async def confirm_button(self, interaction: Interaction, button: ui.Button):
         if interaction.user.id == self.match["reported_by"]:
-            await interaction.response.send_message(
-                "❌ To ty zgłosiłeś wynik, musi potwierdzić drugi gracz.",
-                ephemeral=True,
-            )
-            return
-
-        if interaction.user.id not in (self.match["player1"], self.match["player2"]):
-            await interaction.response.send_message(
-                "❌ Nie bierzesz udziału w tym meczu.", ephemeral=True
-            )
+            await interaction.response.send_message("❌ Musi potwierdzić drugi gracz.", ephemeral=True)
             return
 
         p1 = str(self.match["player1"])
@@ -118,117 +82,65 @@ class ConfirmView(ui.View):
         s2 = self.match["score2"]
 
         match_key = tuple(sorted((self.match["player1"], self.match["player2"])))
-
-        if match_key in pending_results:
-            del pending_results[match_key]
-
+        pending_results.pop(match_key, None)
         confirmed_matches.add(match_key)
 
-        # --- SUPABASE: aktualizacja statystyk ---
-        await upsert_player_stats(p1, goals_scored=s1, goals_conceded=s2)
-        await upsert_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+        update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
+        update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
 
         if s1 > s2:
-            await upsert_player_stats(p1, wins=1)
-            await upsert_player_stats(p2, losses=1)
-            result_text = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
+            update_player_stats(p1, wins=1)
+            update_player_stats(p2, losses=1)
+            msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
         elif s2 > s1:
-            await upsert_player_stats(p2, wins=1)
-            await upsert_player_stats(p1, losses=1)
-            result_text = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
+            update_player_stats(p2, wins=1)
+            update_player_stats(p1, losses=1)
+            msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
         else:
-            await upsert_player_stats(p1, draws=1)
-            await upsert_player_stats(p2, draws=1)
-            result_text = f"Remis {s1}-{s2} pomiędzy <@{p1}> a <@{p2}>."
+            update_player_stats(p1, draws=1)
+            update_player_stats(p2, draws=1)
+            msg = f"Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
 
-        # Usuń z aktywnych meczy
-        if self.match["player1"] in active_matches:
-            del active_matches[self.match["player1"]]
-        if self.match["player2"] in active_matches:
-            del active_matches[self.match["player2"]]
+        view = RematchView(player1=int(p1), player2=int(p2))
+        await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
 
-        # Odblokuj przycisk rewanżu
-        self.rematch_button.disabled = False
-        await interaction.response.edit_message(
-            content=f"✅ Wynik potwierdzony i zapisany!\n{result_text}",
-            view=self,
+### === PRZYCISK REWANŻU === ###
+class RematchView(ui.View):
+    def __init__(self, player1, player2):
+        super().__init__(timeout=60)
+        self.player1 = player1
+        self.player2 = player2
+
+    @ui.button(label="Rewanż", style=discord.ButtonStyle.blurple)
+    async def rematch(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id not in (self.player1, self.player2):
+            await interaction.response.send_message("❌ Tylko gracze meczu mogą zainicjować rewanż.", ephemeral=True)
+            return
+
+        opponent = self.player2 if interaction.user.id == self.player1 else self.player1
+        active_matches[self.player1] = opponent
+        active_matches[self.player2] = self.player1
+
+        await interaction.response.send_message(f"🎯 Rewanż rozpoczęty między <@{self.player1}> i <@{self.player2}>!")
+
+        await asyncio.sleep(2)
+        await interaction.followup.send(
+            f"<@{self.player1}> lub <@{self.player2}>, możecie wpisać wynik meczu.",
+            view=ResultView(self.player1, self.player2)
         )
 
-    async def rematch_callback(self, interaction: Interaction):
-        user_id = interaction.user.id
-        p1 = self.match["player1"]
-        p2 = self.match["player2"]
+### === WIDOK WPISYWANIA WYNIKU === ###
+class ResultView(ui.View):
+    def __init__(self, p1, p2):
+        super().__init__(timeout=None)
+        self.match_info = {"player1": p1, "player2": p2}
 
-        if user_id not in (p1, p2):
-            await interaction.response.send_message(
-                "❌ Tylko gracze w meczu mogą rozpocząć rewanż.", ephemeral=True
-            )
-            return
+    @ui.button(label="Wpisz wynik", style=discord.ButtonStyle.primary)
+    async def enter_score(self, interaction: Interaction, button: ui.Button):
+        await interaction.response.send_modal(ScoreModal(self.match_info))
 
-        if p1 in active_matches or p2 in active_matches:
-            await interaction.response.send_message(
-                "❌ Jeden z graczy już szuka meczu.", ephemeral=True
-            )
-            return
-
-        # Ustaw obaj jako aktywnych z przeciwnikiem i searching False, czyli mecz gotowy
-        active_matches[p1] = {"searching": False, "opponent": p2}
-        active_matches[p2] = {"searching": False, "opponent": p1}
-
-        await interaction.response.send_message(
-            f"🔁 <@{p1}> i <@{p2}> rozpoczęli rewanż! Powodzenia! 🔥", ephemeral=False
-        )
-
-        # Zablokuj przycisk rewanżu
-        self.rematch_button.disabled = True
-        await interaction.message.edit(view=self)
-
-class AcceptMatchView(ui.View):
-    def __init__(self, challenger: discord.Member, timeout: float):
-        super().__init__(timeout=timeout)
-        self.challenger = challenger
-        self.message: Optional[discord.Message] = None
-
-    @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.success)
-    async def accept_button(self, interaction: Interaction, button: ui.Button):
-        if interaction.guild is None:
-            await interaction.response.send_message(
-                "❌ Ta komenda działa tylko na serwerze.", ephemeral=True
-            )
-            return
-
-        if interaction.user.id == self.challenger.id:
-            await interaction.response.send_message(
-                "🙃 Nie możesz zagrać sam ze sobą!", ephemeral=True
-            )
-            return
-
-        match_info = {
-            "player1": self.challenger.id,
-            "player2": interaction.user.id,
-        }
-
-        view = ui.View(timeout=None)
-        view.add_item(EnterScoreButton(match_info))
-
-        await interaction.response.send_message(
-            f"✅ Mecz gotowy! <@{self.challenger.id}> vs <@{interaction.user.id}> 🔥\n"
-            "Kliknij przycisk poniżej, aby wpisać wynik po zakończeniu meczu.",
-            view=view,
-        )
-
-        self.stop()
-
-    async def on_timeout(self):
-        if self.message:
-            for child in self.children:
-                button = cast(ui.Button, child)
-                button.disabled = True
-            await self.message.edit(content="⌛ Czas na znalezienie przeciwnika minął.", view=self)
-
-# --- Komendy ---
-
-@bot.tree.command(name="gram", description="Znajdź przeciwnika do meczu")
+### === KOMENDA /GRAM === ###
+@bot.tree.command(name="gram", description="Szukaj przeciwnika")
 @app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
 async def gram(interaction: Interaction, czas: Optional[int] = 3):
     role = discord.utils.get(interaction.guild.roles, name="Gracz")
@@ -236,99 +148,84 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
         await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
         return
 
-    user_id = interaction.user.id
-
-    if user_id in active_matches and not active_matches[user_id]["searching"]:
-        await interaction.response.send_message("❌ Już grasz w meczu!", ephemeral=True)
-        return
-
-    active_matches[user_id] = {"searching": True, "opponent": None}
-
-    view = AcceptMatchView(interaction.user, timeout=czas * 60)
-
+    view = ResultView(interaction.user.id, 0)  # Zastępowane potem po zaakceptowaniu
     await interaction.response.send_message(
-        f"{role.mention}\n<@{user_id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz. "
-        f"Czas oczekiwania: {czas} minut.",
-        view=view,
-        ephemeral=False,
+        f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz.",
+        view=MatchAcceptView(interaction.user.id, timeout=czas * 60)
     )
 
+### === PRZYCISK AKCEPTACJI MECZU === ###
+class MatchAcceptView(ui.View):
+    def __init__(self, challenger: int, timeout=60):
+        super().__init__(timeout=timeout)
+        self.challenger = challenger
 
-@bot.tree.command(name="ranking", description="Pokaż ranking graczy")
-async def ranking(interaction: discord.Interaction):
-    stats = await get_player_stats()
-    if not stats:
-        await interaction.response.send_message("Brak statystyk w bazie.", ephemeral=True)
-        return
+    @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.success)
+    async def accept(self, interaction: Interaction, button: ui.Button):
+        opponent = interaction.user.id
+        if opponent == self.challenger:
+            await interaction.response.send_message("Nie możesz zaakceptować własnego meczu.", ephemeral=True)
+            return
 
-    # Posortuj wg zwycięstw malejąco, potem remisów itd.
-    sorted_stats = sorted(
-        stats,
-        key=lambda x: (x["wins"], x["draws"], -x["losses"]),
-        reverse=True,
-    )
-    lines = []
-    for i, player in enumerate(sorted_stats, start=1):
-        lines.append(
-            f"{i}. <@{player['player_id']}> - W: {player['wins']}, P: {player['losses']}, R: {player['draws']}, "
-            f"Gole: {player['goals_scored']}-{player['goals_conceded']}"
+        active_matches[self.challenger] = opponent
+        active_matches[opponent] = self.challenger
+
+        await interaction.response.send_message(
+            f"🎮 Mecz zaakceptowany między <@{self.challenger}> i <@{opponent}>!\nKliknij, aby wpisać wynik:",
+            view=ResultView(self.challenger, opponent)
         )
 
-    await interaction.response.send_message("🏆 Ranking graczy:\n" + "\n".join(lines))
+### === KOMENDY /STATYSTYKI I /RANKING === ###
+@bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
+async def statystyki(interaction: Interaction):
+    stats = get_player_stats(str(interaction.user.id))
+    embed = discord.Embed(title=f"Statystyki {interaction.user.display_name}", color=discord.Color.blue())
+    embed.add_field(name="Wygrane", value=str(stats["wins"]))
+    embed.add_field(name="Przegrane", value=str(stats["losses"]))
+    embed.add_field(name="Remisy", value=str(stats["draws"]))
+    embed.add_field(name="Gole zdobyte", value=str(stats["goals_scored"]))
+    embed.add_field(name="Gole stracone", value=str(stats["goals_conceded"]))
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="statystyki", description="Pokaż swoje statystyki")
-async def statystyki(interaction: discord.Interaction):
-    user_id = str(interaction.user.id)
-    stats = await get_player_stats(user_id)
-    if not stats:
-        await interaction.response.send_message("Nie masz jeszcze żadnych statystyk.", ephemeral=True)
-        return
+@bot.tree.command(name="ranking", description="Wyświetl ranking")
+async def ranking(interaction: Interaction):
+    data = get_all_stats()
+    sorted_players = sorted(data, key=lambda x: (x["wins"] / max((x["wins"] + x["losses"] + x["draws"] or 1)), 0), reverse=True)
 
-    p = stats[0]
-    text = (
-        f"📊 Statystyki dla <@{user_id}>:\n"
-        f"Wygrane: {p['wins']}\n"
-        f"Przegrane: {p['losses']}\n"
-        f"Remisy: {p['draws']}\n"
-        f"Gole zdobyte: {p['goals_scored']}\n"
-        f"Gole stracone: {p['goals_conceded']}"
-    )
-    await interaction.response.send_message(text, ephemeral=True)
+    embed = discord.Embed(title="🏆 Ranking Graczy", color=discord.Color.gold())
+    for i, player in enumerate(sorted_players[:10], 1):
+        user = await bot.fetch_user(int(player["user_id"]))
+        win_ratio = player["wins"] / max((player["wins"] + player["losses"] + player["draws"] or 1))
+        embed.add_field(
+            name=f"#{i} {user.name}",
+            value=f"✅ {player['wins']} 🟥 {player['losses']} 🤝 {player['draws']} | 🎯 {win_ratio:.1%}",
+            inline=False
+        )
+    await interaction.response.send_message(embed=embed)
 
-# --- Run ---
+### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
 async def on_ready():
-    print(f"Bot zalogowany jako {bot.user} (ID: {bot.user.id})")
+    print(f"Zalogowano jako {bot.user}")
     try:
         synced = await bot.tree.sync()
-        print(f"Slash commands synced: {len(synced)}")
+        print(f"Zsynchronizowano {len(synced)} komend")
     except Exception as e:
-        print(f"Błąd podczas synca slash commands: {e}")
+        print("Błąd synchronizacji:", e)
 
-async def handle(request):
-    return web.Response(text="Bot działa!")
-
-async def run_webserver():
+# Wymagane przez Render Web Service — serwer HTTP
+async def start_webserver():
+    from aiohttp import web
+    async def handle(_): return web.Response(text="Bot działa!")
     app = web.Application()
-    app.router.add_get('/', handle)
-    port = int(os.getenv("PORT", 8080))
+    app.add_routes([web.get("/", handle)])
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
     await site.start()
-    print(f"Serwer HTTP działa na porcie {port}")
-
-async def main():
-    TOKEN = os.getenv("TOKEN")
-    if not TOKEN:
-        print("Brak tokenu bota w zmiennych środowiskowych.")
-        return
-
-    await asyncio.gather(
-        bot.start(TOKEN),
-        run_webserver()
-    )
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    TOKEN = os.getenv("TOKEN")
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_webserver())
+    bot.run(TOKEN)
