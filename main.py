@@ -175,26 +175,41 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
         view=MatchAcceptView(interaction.user.id, timeout=czas * 60)
     )
 
-### === PRZYCISK AKCEPTACJI MECZU === ###
-class MatchAcceptView(ui.View):
-    def __init__(self, challenger: int, timeout=60):
-        super().__init__(timeout=timeout)
-        self.challenger = challenger
+@ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
+async def confirm_button(self, interaction: Interaction, button: ui.Button):
+    if interaction.user.id == self.match["reported_by"]:
+        await interaction.response.send_message("❌ Musi potwierdzić drugi gracz.", ephemeral=True)
+        return
 
-    @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.success)
-    async def accept(self, interaction: Interaction, button: ui.Button):
-        opponent = interaction.user.id
-        if opponent == self.challenger:
-            await interaction.response.send_message("Nie możesz zaakceptować własnego meczu.", ephemeral=True)
-            return
+    p1 = str(self.match["player1"])
+    p2 = str(self.match["player2"])
+    s1 = self.match["score1"]
+    s2 = self.match["score2"]
 
-        active_matches[self.challenger] = opponent
-        active_matches[opponent] = self.challenger
+    match_key = tuple(sorted((self.match["player1"], self.match["player2"])))
+    pending_results.pop(match_key, None)
+    confirmed_matches.add(match_key)
 
-        await interaction.response.send_message(
-            f"🎮 Mecz zaakceptowany między <@{self.challenger}> i <@{opponent}>!\nKliknij, aby wpisać wynik:",
-            view=ResultView(self.challenger, opponent)
-        )
+    # **Tutaj dodajemy await!**
+    await update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
+    await update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+
+    if s1 > s2:
+        await update_player_stats(p1, wins=1)
+        await update_player_stats(p2, losses=1)
+        msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
+    elif s2 > s1:
+        await update_player_stats(p2, wins=1)
+        await update_player_stats(p1, losses=1)
+        msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
+    else:
+        await update_player_stats(p1, draws=1)
+        await update_player_stats(p2, draws=1)
+        msg = f"Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
+
+    view = RematchView(player1=int(p1), player2=int(p2))
+    await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
+
 
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
