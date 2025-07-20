@@ -3,6 +3,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands, ui, Interaction
+from discord.ui import View
 import os
 from dotenv import load_dotenv
 from typing import Optional
