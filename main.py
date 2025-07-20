@@ -229,37 +229,31 @@ class AcceptMatchView(ui.View):
 # --- Komendy ---
 
 @bot.tree.command(name="gram", description="Znajdź przeciwnika do meczu")
-async def gram(interaction: discord.Interaction):
-    user_id = interaction.user.id
-
-    if user_id in active_matches and active_matches[user_id]["searching"]:
-        await interaction.response.send_message("Jesteś już w kolejce na mecz.", ephemeral=True)
+@bot.tree.command(name="gram", description="Szukaj przeciwnika")
+@app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
+async def gram(interaction: Interaction, czas: Optional[int] = 3):
+    role = discord.utils.get(interaction.guild.roles, name="Gracz")
+    if role is None:
+        await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
         return
 
-    # Szukaj przeciwnika, który też szuka
-    opponent_id = None
-    for uid, info in active_matches.items():
-        if info["searching"] and uid != user_id:
-            opponent_id = uid
-            break
+    user_id = interaction.user.id
 
-    if opponent_id:
-        # Para graczy znalezionych, tworzymy mecz
-        active_matches[user_id] = {"searching": False, "opponent": opponent_id}
-        active_matches[opponent_id] = {"searching": False, "opponent": user_id}
+    if user_id in active_matches and not active_matches[user_id]["searching"]:
+        await interaction.response.send_message("❌ Już grasz w meczu!", ephemeral=True)
+        return
 
-        await interaction.response.send_message(
-            f"🎉 Znaleziono przeciwnika: <@{opponent_id}>! Mecz gotowy, powodzenia! 🔥"
-        )
-    else:
-        # Nikt nie szuka, dodaj siebie do kolejki
-        active_matches[user_id] = {"searching": True, "opponent": None}
-        view = AcceptMatchView(challenger=interaction.user, timeout=60)
-        await interaction.response.send_message(
-            "⏳ Szukam przeciwnika... (lub ktoś może zaakceptować twój mecz)",
-            view=view,
-        )
-        view.message = await interaction.original_response()
+    active_matches[user_id] = {"searching": True, "opponent": None}
+
+    view = AcceptMatchView(interaction.user, timeout=czas * 60)
+
+    await interaction.response.send_message(
+        f"{role.mention}\n<@{user_id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz. "
+        f"Czas oczekiwania: {czas} minut.",
+        view=view,
+        ephemeral=False,
+    )
+
 
 @bot.tree.command(name="ranking", description="Pokaż ranking graczy")
 async def ranking(interaction: discord.Interaction):
