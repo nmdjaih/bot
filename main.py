@@ -115,7 +115,7 @@ class ConfirmView(View):
             msg = f"<@{self.player2}> wygrał z <@{self.player1}> {self.s2}-{self.s1}!"
         else:
             msg = f"🤝 Remis {self.s1}-{self.s2} między <@{self.player1}> a <@{self.player2}>."
-
+        pending_results.pop(self.match_key, None)
         view = RematchView(self.player1, self.player2)
         await interaction.response.edit_message(content=msg + "\nKliknij poniżej, aby zagrać rewanż.", view=view)
 
