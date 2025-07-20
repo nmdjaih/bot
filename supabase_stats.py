@@ -1,57 +1,47 @@
 import os
-from supabase import create_client, Client
+from supabase import create_client
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-async def get_player_stats(user_id: str):
-    response = supabase.table("stats").select("*").eq("user_id", user_id).single().execute()
-    if response.error:
-        # jeśli brak rekordu, zwróć domyślne wartości
+async def get_player_stats(player_id: str) -> dict:
+    response = supabase.table("player_stats").select("*").eq("player_id", player_id).execute()
+    data = response.data
+    if data:
+        return data[0]
+    else:
         return {
+            "player_id": player_id,
             "wins": 0,
             "losses": 0,
             "draws": 0,
             "goals_scored": 0,
             "goals_conceded": 0,
         }
-    return response.data or {
-        "wins": 0,
-        "losses": 0,
-        "draws": 0,
-        "goals_scored": 0,
-        "goals_conceded": 0,
-    }
 
-async def update_player_stats(user_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
-    # Pobierz obecne statystyki
-    existing = supabase.table("stats").select("*").eq("user_id", user_id).single().execute()
-    if existing.error or not existing.data:
-        # Jeśli nie ma rekordu - dodaj nowy
-        stat = {
-            "user_id": user_id,
+async def upsert_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
+    response = supabase.table("player_stats").select("*").eq("player_id", player_id).execute()
+    data = response.data
+
+    if data:
+        stats = data[0]
+        updated_stats = {
+            "wins": stats.get("wins", 0) + wins,
+            "losses": stats.get("losses", 0) + losses,
+            "draws": stats.get("draws", 0) + draws,
+            "goals_scored": stats.get("goals_scored", 0) + goals_scored,
+            "goals_conceded": stats.get("goals_conceded", 0) + goals_conceded,
+        }
+        supabase.table("player_stats").update(updated_stats).eq("player_id", player_id).execute()
+    else:
+        new_stats = {
+            "player_id": player_id,
             "wins": wins,
             "losses": losses,
             "draws": draws,
             "goals_scored": goals_scored,
             "goals_conceded": goals_conceded,
         }
-        supabase.table("stats").insert(stat).execute()
-    else:
-        data = existing.data
-        stat = {
-            "wins": data.get("wins", 0) + wins,
-            "losses": data.get("losses", 0) + losses,
-            "draws": data.get("draws", 0) + draws,
-            "goals_scored": data.get("goals_scored", 0) + goals_scored,
-            "goals_conceded": data.get("goals_conceded", 0) + goals_conceded,
-        }
-        supabase.table("stats").update(stat).eq("user_id", user_id).execute()
-
-async def get_all_stats():
-    response = supabase.table("stats").select("*").execute()
-    if response.error:
-        return []
-    return response.data or []
+        supabase.table("player_stats").insert(new_stats).execute()
