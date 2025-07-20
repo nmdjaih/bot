@@ -160,20 +160,6 @@ class ResultView(ui.View):
     async def enter_score(self, interaction: Interaction, button: ui.Button):
         await interaction.response.send_modal(ScoreModal(self.match_info))
 
-### === KOMENDA /GRAM === ###
-@bot.tree.command(name="gram", description="Szukaj przeciwnika")
-@app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
-async def gram(interaction: Interaction, czas: Optional[int] = 3):
-    role = discord.utils.get(interaction.guild.roles, name="Gracz")
-    if role is None:
-        await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
-        return
-
-    view = ResultView(interaction.user.id, 0)  # Zastępowane potem po zaakceptowaniu
-    await interaction.response.send_message(
-        f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz.",
-        view=MatchAcceptView(interaction.user.id, timeout=czas * 60)
-    )
 
 @ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
 async def confirm_button(self, interaction: Interaction, button: ui.Button):
@@ -212,6 +198,21 @@ async def confirm_button(self, interaction: Interaction, button: ui.Button):
 
 
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
+### === KOMENDA /GRAM === ###
+@bot.tree.command(name="gram", description="Szukaj przeciwnika")
+@app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
+async def gram(interaction: Interaction, czas: Optional[int] = 3):
+    role = discord.utils.get(interaction.guild.roles, name="Gracz")
+    if role is None:
+        await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
+        return
+
+    view = ResultView(interaction.user.id, 0)  # Zastępowane potem po zaakceptowaniu
+    await interaction.response.send_message(
+        f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz.",
+        view=MatchAcceptView(interaction.user.id, timeout=czas * 60)
+    )
+
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
 async def statystyki(interaction: Interaction):
     stats = await get_player_stats(str(interaction.user.id))  # <--- tu await
