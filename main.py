@@ -178,7 +178,6 @@ class ConfirmView(ui.View):
 
         save_stats()
 
-        # Usuń mecz z aktywnych
         if p1 in active_matches:
             del active_matches[p1]
         if p2 in active_matches:
@@ -237,10 +236,7 @@ class AcceptMatchView(ui.View):
 @bot.tree.command(name="gram", description="Szukaj przeciwnika")
 @app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
 async def gram(interaction: Interaction, czas: Optional[int] = 3):
-    # Znajdź rolę "Gracz"
     role = discord.utils.get(interaction.guild.roles, name="Gracz")
-    
-    # Jeśli rola nie została znaleziona, wyślij błąd
     if role is None:
         await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
         return
@@ -255,6 +251,61 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
     )
 
     view.message = await interaction.original_response()
+@bot.tree.command()
+async def ranking(ctx):
+    # Sprawdzenie czy użytkownik ma rolę "Gracz"
+    has_role = discord.utils.get(ctx.author.roles, name="Gracz")
+    if not has_role:
+        await ctx.send("❌ Ta komenda jest dostępna tylko dla osób z rolą **Gracz**.")
+        return
+
+    with open("stats.json", "r") as f:
+        stats = json.load(f)
+
+    ranking_list = []
+
+    for user_id, data in stats.items():
+        wins = data.get("wins", 0)
+        losses = data.get("losses", 0)
+        draws = data.get("draws", 0)
+        total_games = wins + losses + draws
+
+        if total_games > 0:
+            winratio = wins / total_games
+        else:
+            winratio = 0
+
+        ranking_list.append((user_id, winratio, wins, total_games))
+
+    # Sortuj po winratio
+    ranking_list.sort(key=lambda x: x[1], reverse=True)
+
+    # Tworzenie embed
+    embed = discord.Embed(
+        title="🏆 Ranking Graczy – WinRatio",
+        description="Gracze posortowani według skuteczności zwycięstw",
+        color=discord.Color.blurple()
+    )
+
+    place_emojis = ["🥇", "🥈", "🥉"]  # Emoji dla top 3
+
+    for i, (user_id, ratio, wins, games) in enumerate(ranking_list, 1):
+        try:
+            user = await bot.fetch_user(int(user_id))
+            emoji = place_emojis[i - 1] if i <= 3 else f"#{i:02d}"
+
+            # Przykład: 🥇 GraczXYZ — 8/10 wygrane (80%)
+            embed.add_field(
+                name=f"{emoji} {user.name}",
+                value=f"🎮 Mecze: `{games}`\n✅ Wygrane: `{wins}`\n📈 WinRatio: `{ratio:.1%}`",
+                inline=False
+            )
+        except:
+            continue
+
+    embed.set_footer(text="Ranking aktualny na podstawie statystyk w stats.json")
+
+    await ctx.send(embed=embed)
 
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
 async def statystyki(interaction: Interaction):
@@ -282,4 +333,22 @@ if __name__ == "__main__":
     if not TOKEN:
         print("Błąd: Brak tokena w .env")
         exit(1)
+    
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class DummyHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'Discord bot is running.')
+
+    def start_web_server():
+        port = int(os.environ.get("PORT", 10000))
+        server = HTTPServer(("0.0.0.0", port), DummyHandler)
+        print(f"Fake web server running on port {port}")
+        server.serve_forever()
+
+    threading.Thread(target=start_web_server, daemon=True).start()
+
     bot.run(TOKEN)
