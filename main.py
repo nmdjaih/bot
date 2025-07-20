@@ -312,6 +312,9 @@ async def on_ready():
     except Exception as e:
         print(f"Błąd podczas synca slash commands: {e}")
 
-if __name__ == "__main__":
-    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-    bot.run(TOKEN)
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    print("Brak tokenu bota w zmiennych środowiskowych.")
+    exit(1)
+bot.run(TOKEN)
+
