@@ -36,8 +36,9 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
         p2 = self.match_info["player2"]
         match_key = tuple(sorted((p1, p2)))
 
+        # Nie dodawaj więcej niż raz do pending_results
         if match_key in pending_results:
-            await interaction.response.send_message("❌ Wynik już zgłoszony.", ephemeral=True)
+            await interaction.response.send_message("❌ Wynik już zgłoszony. Czekamy na potwierdzenie.", ephemeral=True)
             return
 
         try:
@@ -51,34 +52,42 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             await interaction.response.send_message("❌ Nie jesteś graczem tego meczu.", ephemeral=True)
             return
 
+        # Zapisz dane do pending_results tylko RAZ
         pending_results[match_key] = {
             "player1": p1,
             "player2": p2,
             "score1": s1,
             "score2": s2,
-            "reported_by": interaction.user.id,
+            "confirmed": False
         }
 
-        view = ConfirmView(pending_results[match_key])  # Upewnij się, że ConfirmView dziedziczy z ui.View
+        view = ConfirmView(p1, p2, s1, s2, match_key)
         await interaction.response.send_message(
-            f"Wynik zgłoszony: {s1} - {s2}\nDrugi gracz proszony o potwierdzenie.",
+            f"Wynik zgłoszony: {s1} - {s2}. Drugi gracz proszony o potwierdzenie.",
             view=view
         )
 
 
+
 ### === PRZYCISK POTWIERDZENIA WYNIKU === ###
 class ConfirmView(View):
-    def __init__(self, player1, player2, s1, s2):
+    def __init__(self, player1, player2, s1, s2, match_key):
         super().__init__(timeout=60)
         self.player1 = player1
         self.player2 = player2
         self.s1 = s1
         self.s2 = s2
+        self.match_key = match_key
 
     @discord.ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.success)
     async def confirm(self, interaction: Interaction, button: discord.ui.Button):
         if interaction.user.id not in [self.player1, self.player2]:
-            await interaction.response.send_message("Nie jesteś uczestnikiem tego meczu!", ephemeral=True)
+            await interaction.response.send_message("❌ Nie jesteś uczestnikiem tego meczu!", ephemeral=True)
+            return
+
+        match_info = pending_results.get(self.match_key)
+        if not match_info or match_info.get("confirmed", False):
+            await interaction.response.send_message("❌ Ten wynik już został potwierdzony.", ephemeral=True)
             return
 
         p1 = self.player1
@@ -86,7 +95,6 @@ class ConfirmView(View):
         s1 = self.s1
         s2 = self.s2
 
-        # Przygotowanie danych
         p1_stats = {
             "wins": 1 if s1 > s2 else 0,
             "losses": 1 if s1 < s2 else 0,
@@ -103,20 +111,30 @@ class ConfirmView(View):
             "goals_conceded": s1,
         }
 
-        # Aktualizacja Supabase – tylko raz na gracza!
         await update_player_stats(str(p1), **p1_stats)
         await update_player_stats(str(p2), **p2_stats)
+        pending_results[self.match_key]["confirmed"] = True
 
-        # Wiadomość o wyniku
         if s1 > s2:
             msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
         elif s2 > s1:
             msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
         else:
-            msg = f"Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
+            msg = f"🤝 Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
 
         await interaction.response.edit_message(content=msg, view=None)
 
+    @discord.ui.button(label="Odrzuć wynik", style=discord.ButtonStyle.danger)
+    async def reject(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id not in [self.player1, self.player2]:
+            await interaction.response.send_message("❌ Nie jesteś uczestnikiem tego meczu!", ephemeral=True)
+            return
+
+        # Usuwamy wynik z pending_results, żeby można było zgłosić ponownie
+        if self.match_key in pending_results:
+            del pending_results[self.match_key]
+
+        await interaction.response.edit_message(content="❌ Wynik został odrzucony. Możesz zgłosić wynik ponownie.", view=None)
 
 ### === PRZYCISK REWANŻU Z AKCEPTACJĄ === ###
 class RematchView(ui.View):
