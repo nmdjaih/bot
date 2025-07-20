@@ -65,45 +65,56 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
         )
 
 ### === PRZYCISK POTWIERDZENIA WYNIKU === ###
-class ConfirmView(ui.View):
-    def __init__(self, match):
-        super().__init__(timeout=None)
-        self.match = match
+class ConfirmView(View):
+    def __init__(self, player1, player2, s1, s2):
+        super().__init__(timeout=60)
+        self.player1 = player1
+        self.player2 = player2
+        self.s1 = s1
+        self.s2 = s2
 
-    @ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
-    async def confirm_button(self, interaction: Interaction, button: ui.Button):
-        if interaction.user.id == self.match["reported_by"]:
-            await interaction.response.send_message("❌ Musi potwierdzić drugi gracz.", ephemeral=True)
+    @discord.ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: Interaction, button: discord.ui.Button):
+        if interaction.user.id not in [self.player1, self.player2]:
+            await interaction.response.send_message("Nie jesteś uczestnikiem tego meczu!", ephemeral=True)
             return
 
-        p1 = str(self.match["player1"])
-        p2 = str(self.match["player2"])
-        s1 = self.match["score1"]
-        s2 = self.match["score2"]
+        p1 = self.player1
+        p2 = self.player2
+        s1 = self.s1
+        s2 = self.s2
 
-        match_key = tuple(sorted((self.match["player1"], self.match["player2"])))
-        pending_results.pop(match_key, None)
-        confirmed_matches.add(match_key)
+        # Przygotowanie danych
+        p1_stats = {
+            "wins": 1 if s1 > s2 else 0,
+            "losses": 1 if s1 < s2 else 0,
+            "draws": 1 if s1 == s2 else 0,
+            "goals_scored": s1,
+            "goals_conceded": s2,
+        }
 
-        await update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
-        await update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+        p2_stats = {
+            "wins": 1 if s2 > s1 else 0,
+            "losses": 1 if s2 < s1 else 0,
+            "draws": 1 if s2 == s1 else 0,
+            "goals_scored": s2,
+            "goals_conceded": s1,
+        }
 
+        # Aktualizacja Supabase – tylko raz na gracza!
+        await update_player_stats(str(p1), **p1_stats)
+        await update_player_stats(str(p2), **p2_stats)
 
+        # Wiadomość o wyniku
         if s1 > s2:
-            await update_player_stats(p1, wins=1)
-            await update_player_stats(p2, losses=1)
             msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
         elif s2 > s1:
-            await update_player_stats(p2, wins=1)
-            await update_player_stats(p1, losses=1)
             msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
         else:
-            await update_player_stats(p1, draws=1)
-            await update_player_stats(p2, draws=1)
             msg = f"Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
 
-        view = RematchView(player1=int(p1), player2=int(p2))
-        await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
+        await interaction.response.edit_message(content=msg, view=None)
+
 
 ### === PRZYCISK REWANŻU Z AKCEPTACJĄ === ###
 class RematchView(ui.View):
