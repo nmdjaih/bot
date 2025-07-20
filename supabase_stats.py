@@ -21,7 +21,7 @@ async def get_player_stats(player_id: str) -> dict:
             "goals_conceded": 0,
         }
 
-async def upsert_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
+async def update_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
     response = supabase.table("player_stats").select("*").eq("player_id", player_id).execute()
     data = response.data
 
