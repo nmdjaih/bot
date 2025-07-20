@@ -1,4 +1,5 @@
 import os
+import asyncio
 from supabase import create_client
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -6,7 +7,8 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-async def get_player_stats(player_id: str) -> dict:
+# --- synchroniczne funkcje, które wykonują zapytania ---
+def get_player_stats_sync(player_id: str) -> dict:
     response = supabase.table("player_stats").select("*").eq("player_id", player_id).execute()
     data = response.data
     if data:
@@ -21,7 +23,7 @@ async def get_player_stats(player_id: str) -> dict:
             "goals_conceded": 0,
         }
 
-async def update_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
+def update_player_stats_sync(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
     response = supabase.table("player_stats").select("*").eq("player_id", player_id).execute()
     data = response.data
 
@@ -46,6 +48,16 @@ async def update_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_s
         }
         supabase.table("player_stats").insert(new_stats).execute()
 
-async def get_all_stats():
+def get_all_stats_sync():
     response = supabase.table("player_stats").select("*").execute()
     return response.data if response.data else []
+
+# --- async wrappery wywołujące sync funkcje w osobnym wątku ---
+async def get_player_stats(player_id: str) -> dict:
+    return await asyncio.to_thread(get_player_stats_sync, player_id)
+
+async def update_player_stats(player_id: str, wins=0, losses=0, draws=0, goals_scored=0, goals_conceded=0):
+    await asyncio.to_thread(update_player_stats_sync, player_id, wins, losses, draws, goals_scored, goals_conceded)
+
+async def get_all_stats():
+    return await asyncio.to_thread(get_all_stats_sync)
