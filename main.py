@@ -4,7 +4,7 @@ from discord import app_commands, ui, Interaction
 import os
 from typing import Optional, cast
 import asyncio
-
+from aiohttp import web
 # SUPABASE importy i setup
 from supabase_stats import get_player_stats, upsert_player_stats
 
@@ -312,9 +312,30 @@ async def on_ready():
     except Exception as e:
         print(f"Błąd podczas synca slash commands: {e}")
 
-TOKEN = os.getenv("TOKEN")
-if not TOKEN:
-    print("Brak tokenu bota w zmiennych środowiskowych.")
-    exit(1)
-bot.run(TOKEN)
+async def handle(request):
+    return web.Response(text="Bot działa!")
+
+async def run_webserver():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    port = int(os.getenv("PORT", 8080))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Serwer HTTP działa na porcie {port}")
+
+async def main():
+    TOKEN = os.getenv("TOKEN")
+    if not TOKEN:
+        print("Brak tokenu bota w zmiennych środowiskowych.")
+        return
+
+    await asyncio.gather(
+        bot.start(TOKEN),
+        run_webserver()
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
