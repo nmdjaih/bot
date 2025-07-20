@@ -209,12 +209,6 @@ class AcceptMatchView(ui.View):
             )
             return
 
-        if str(interaction.user.id) in active_matches:
-            await interaction.response.send_message(
-                "❌ Masz już aktywny mecz! Poczekaj, aż się skończy.",
-                ephemeral=True,
-            )
-            return
 
         # Dodaj mecz do aktywnych dla obu graczy
         active_matches[str(self.challenger.id)] = {"opponent": str(interaction.user.id)}
