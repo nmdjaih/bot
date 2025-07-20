@@ -85,20 +85,21 @@ class ConfirmView(ui.View):
         pending_results.pop(match_key, None)
         confirmed_matches.add(match_key)
 
-        update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
-        update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+        await update_player_stats(p1, goals_scored=s1, goals_conceded=s2)
+        await update_player_stats(p2, goals_scored=s2, goals_conceded=s1)
+
 
         if s1 > s2:
-            update_player_stats(p1, wins=1)
-            update_player_stats(p2, losses=1)
+            await update_player_stats(p1, wins=1)
+            await update_player_stats(p2, losses=1)
             msg = f"<@{p1}> wygrał z <@{p2}> {s1}-{s2}!"
         elif s2 > s1:
-            update_player_stats(p2, wins=1)
-            update_player_stats(p1, losses=1)
+            await update_player_stats(p2, wins=1)
+            await update_player_stats(p1, losses=1)
             msg = f"<@{p2}> wygrał z <@{p1}> {s2}-{s1}!"
         else:
-            update_player_stats(p1, draws=1)
-            update_player_stats(p2, draws=1)
+            await update_player_stats(p1, draws=1)
+            await update_player_stats(p2, draws=1)
             msg = f"Remis {s1}-{s2} między <@{p1}> a <@{p2}>."
 
         view = RematchView(player1=int(p1), player2=int(p2))
