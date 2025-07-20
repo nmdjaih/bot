@@ -6,7 +6,7 @@ from discord import app_commands, ui, Interaction
 import os
 from dotenv import load_dotenv
 from typing import Optional
-from superbase_stats import get_player_stats, update_player_stats, get_all_stats
+from supebase_stats import get_player_stats, update_player_stats, get_all_stats
 import asyncio
 import aiohttp
 
