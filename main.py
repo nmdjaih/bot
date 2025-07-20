@@ -58,11 +58,12 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             "reported_by": interaction.user.id,
         }
 
-        view = ConfirmView(pending_results[match_key])
+        view = ConfirmView(pending_results[match_key])  # Upewnij się, że ConfirmView dziedziczy z ui.View
         await interaction.response.send_message(
             f"Wynik zgłoszony: {s1} - {s2}\nDrugi gracz proszony o potwierdzenie.",
             view=view
         )
+
 
 ### === PRZYCISK POTWIERDZENIA WYNIKU === ###
 class ConfirmView(View):
