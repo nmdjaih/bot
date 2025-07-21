@@ -108,17 +108,18 @@ class SignupView(discord.ui.View):
         )
         await interaction.message.edit(embed=embed)
 
-         if remaining == 0:
-        # Wyłącz przycisk
-        button.disabled = True
-        await interaction.message.edit(view=self)
+        if remaining == 0:
+            # Wyłącz przycisk
+            button.disabled = True
+            await interaction.message.edit(view=self)
 
-        # Wyślij wiadomość o rozpoczęciu turnieju
-        await interaction.channel.send(
-            f"🏁 Zapisy do turnieju **{tournament['name']}** zostały zakończone! Turniej rozpoczyna się teraz!"
-        )
+            # Wyślij wiadomość o rozpoczęciu turnieju
+            await interaction.channel.send(
+                f"🏁 Zapisy do turnieju **{tournament['name']}** zostały zakończone! Turniej rozpoczyna się teraz!"
+            )
         
         await interaction.response.send_message("✅ Zapisano do turnieju!", ephemeral=True)
+
 
 
 class ConfirmView(View):
