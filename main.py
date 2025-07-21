@@ -10,6 +10,9 @@ from typing import Optional
 from supabase_stats import get_player_stats, update_player_stats, get_all_stats
 import asyncio
 import aiohttp
+from typing import Optional
+from typing import cast
+
 
 load_dotenv()
 
