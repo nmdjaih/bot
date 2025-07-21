@@ -73,51 +73,40 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
         )
 
 #turniej#
-class SignupButton(ui.View):
-    def __init__(self, message_id: int, tournament_name: str, limit: int):
+class SignupView(discord.ui.View):
+    def __init__(self, message_id: int):
         super().__init__(timeout=None)
         self.message_id = message_id
-        self.tournament_name = tournament_name
-        self.limit = limit
 
-    @ui.button(label="Zapisz się", style=discord.ButtonStyle.success)
-    async def signup(self, interaction: Interaction, button: ui.Button):
-        tournament = tournaments.get(self.message_id)
-        if not tournament:
-            await interaction.response.send_message("❌ Turniej nie istnieje.", ephemeral=True)
+    @discord.ui.button(label="Zapisz się", style=discord.ButtonStyle.primary)
+    async def signup(self, interaction: Interaction, button: discord.ui.Button):
+        message_id = self.message_id
+        if message_id not in tournaments:
+            await interaction.response.send_message("❌ Ten turniej nie istnieje lub został usunięty.", ephemeral=True)
             return
 
+        tournament = tournaments[message_id]
         user_id = interaction.user.id
+
         if user_id in tournament["players"]:
-            await interaction.response.send_message("❌ Jesteś już zapisany do tego turnieju!", ephemeral=True)
+            await interaction.response.send_message("⚠️ Już jesteś zapisany do tego turnieju.", ephemeral=True)
+            return
+
+        if len(tournament["players"]) >= tournament["limit"]:
+            await interaction.response.send_message("⛔ Turniej jest już pełny.", ephemeral=True)
             return
 
         tournament["players"].append(user_id)
-        left = self.limit - len(tournament["players"])
+        remaining = tournament["limit"] - len(tournament["players"])
+        zapisani = "\n".join(f"<@{uid}>" for uid in tournament["players"])
 
-        # Lista zapisanych graczy
-        signed_up_mentions = [f"<@{uid}>" for uid in tournament["players"]]
-        player_list_text = "\n".join(signed_up_mentions) or "Brak zapisanych graczy."
-
-        # Nowy embed z listą
         embed = discord.Embed(
-            title=f"🎮 Turniej: {self.tournament_name}",
-            description=(
-                f"Kliknij przycisk, aby zapisać się do turnieju!\n"
-                f"**Pozostało miejsc:** {left}/{self.limit}\n\n"
-                f"**Zapisani gracze:**\n{player_list_text}"
-            ),
+            title=f"🎮 Turniej: {tournament['name']}",
+            description=f"Zapisani gracze:\n{zapisani}\n\nPozostało miejsc: **{remaining}**",
             color=discord.Color.green()
         )
-
-        if left <= 0:
-            for child in self.children:
-                child.disabled = True
-            await interaction.message.edit(embed=embed, view=self)
-            await interaction.response.send_message("✅ Zapisałeś się! Limit uczestników osiągnięty.", ephemeral=True)
-        else:
-            await interaction.message.edit(embed=embed, view=self)
-            await interaction.response.send_message(f"✅ Zapisałeś się! Pozostało miejsc: **{left}**", ephemeral=True)
+        await interaction.message.edit(embed=embed)
+        await interaction.response.send_message("✅ Zapisano do turnieju!", ephemeral=True)
 
 
 class ConfirmView(View):
