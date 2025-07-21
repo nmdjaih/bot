@@ -366,6 +366,55 @@ async def ranking(interaction: Interaction):
             inline=False
         )
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="medale", description="Sprawdź swoje lub czyjeś medale")
+@app_commands.describe(user="Użytkownik, którego medale chcesz zobaczyć (opcjonalne)")
+async def medale(interaction: Interaction, user: discord.User = None):
+    user = user or interaction.user
+    stats = await get_player_stats(str(user.id))
+
+    medals = []
+
+    total = stats["wins"] + stats["losses"] + stats["draws"]
+    goals = stats["goals_scored"]
+    losses = stats["losses"]
+    draws = stats["draws"]
+
+    if total >= 10: medals.append("🎓 Początkujący Gracz – 10 rozegranych meczów")
+    if total >= 50: medals.append("🐢 Maratończyk – 50 rozegranych meczów")
+    if total >= 100: medals.append("🧱 Weteran – 100 rozegranych meczów")
+    if total >= 500: medals.append("🐉 Legenda Discorda – 500 rozegranych meczów")
+
+    if goals >= 10: medals.append("🎯 Celownik Ustawiony – 10 goli zdobytych")
+    if goals >= 50: medals.append("🔥 Snajper – 50 goli zdobytych")
+    if goals >= 100: medals.append("💥 Maszyna do goli – 100 goli zdobytych")
+    if goals >= 500: medals.append("🚀 Rzeźnik Bramkarzy – 500 goli zdobytych")
+
+    if losses >= 10: medals.append("😬 Uczeń Pokory – 10 porażek")
+    if losses >= 50: medals.append("🧹 Zamiatany – 50 porażek")
+    if losses >= 100: medals.append("🪦 Król Przegranych – 100 porażek")
+
+    if draws >= 5: medals.append("🤝 Dyplomata – 5 remisów")
+    if draws >= 20: medals.append("😐 Wieczny Remis – 20 remisów")
+    if draws >= 50: medals.append("💤 Król Nudy – 50 remisów")
+
+    if not medals:
+        medals_text = "Brak medali — graj więcej!"
+    else:
+        medals_text = "\n".join(f"- {m}" for m in medals)
+
+    embed = discord.Embed(
+        title=f"🎖️ Medale {user.display_name}",
+        description=medals_text,
+        color=discord.Color.gold()
+    )
+
+    # Jeśli użytkownik sprawdza swoje medale — wiadomość ephemeryczna (ukryta)
+    # W przeciwnym wypadku wiadomość jest publiczna na kanale
+    ephemeral = (user == interaction.user)
+
+    await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
 async def on_ready():
