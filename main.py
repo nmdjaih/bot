@@ -374,7 +374,7 @@ async def medale(interaction: Interaction, user: discord.User = None):
     stats = await get_player_stats(str(user.id))
 
     medals = []
-
+    wins = stats.get("wins", 0)
     total = stats["wins"] + stats["losses"] + stats["draws"]
     goals = stats["goals_scored"]
     losses = stats["losses"]
