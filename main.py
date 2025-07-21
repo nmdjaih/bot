@@ -24,7 +24,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 active_matches = {}  # user_id: opponent_id
 pending_results = {}  # match_key: wynik
 confirmed_matches = set()  # para potwierdzonych meczy
-tournaments = {}  # np. {message_id: {"name": "Turniej X", "limit": 8, "players": [user_ids]}}
+tournaments = {}  # message_id: {name, limit, players}
+
 
 
 ### === MODAL: WPROWADZENIE WYNIKU === ###
@@ -488,8 +489,14 @@ async def stworz_turniej(interaction: Interaction, nazwa: str, limit: int):
         color=discord.Color.green()
     )
 
+    # Najpierw wysyłamy wiadomość
+    message = await interaction.channel.send(embed=embed)
+    
+    # Potem tworzymy widok, przekazując message.id
     view = SignupView(message.id)
-    message = await interaction.channel.send(embed=embed, view=placeholder_view)
+
+    # Edytujemy wiadomość, aby dodać przycisk
+    await message.edit(view=view)
 
     # Zapisujemy turniej do słownika
     tournaments[message.id] = {
@@ -497,6 +504,8 @@ async def stworz_turniej(interaction: Interaction, nazwa: str, limit: int):
         "limit": limit,
         "players": []
     }
+
+    await interaction.response.send_message("✅ Turniej utworzony!", ephemeral=True)
 
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
