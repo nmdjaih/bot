@@ -379,6 +379,11 @@ async def medale(interaction: Interaction, user: discord.User = None):
     goals = stats["goals_scored"]
     losses = stats["losses"]
     draws = stats["draws"]
+        # Medale za wygrane
+    if wins >= 10: medals.append("🏆 Zwycięzca – 10 wygranych")
+    if wins >= 50: medals.append("🔥 Wojownik – 50 wygranych")
+    if wins >= 100: medals.append("💪 Mistrz – 100 wygranych")
+    if wins >= 500: medals.append("👑 Legendarny Mistrz – 500 wygranych")
 
     if total >= 10: medals.append("🎓 Początkujący Gracz – 10 rozegranych meczów")
     if total >= 50: medals.append("🐢 Maratończyk – 50 rozegranych meczów")
