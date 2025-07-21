@@ -24,6 +24,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 active_matches = {}  # user_id: opponent_id
 pending_results = {}  # match_key: wynik
 confirmed_matches = set()  # para potwierdzonych meczy
+tournaments = {}  # np. {message_id: {"name": "Turniej X", "limit": 8, "players": [user_ids]}}
+
 
 ### === MODAL: WPROWADZENIE WYNIKU === ###
 class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
@@ -70,6 +72,52 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             view=view
         )
 
+#turniej#
+class SignupButton(ui.View):
+    def __init__(self, message_id: int, tournament_name: str, limit: int):
+        super().__init__(timeout=None)
+        self.message_id = message_id
+        self.tournament_name = tournament_name
+        self.limit = limit
+
+    @ui.button(label="Zapisz się", style=discord.ButtonStyle.success)
+    async def signup(self, interaction: Interaction, button: ui.Button):
+        tournament = tournaments.get(self.message_id)
+        if not tournament:
+            await interaction.response.send_message("❌ Turniej nie istnieje.", ephemeral=True)
+            return
+
+        user_id = interaction.user.id
+        if user_id in tournament["players"]:
+            await interaction.response.send_message("❌ Jesteś już zapisany do tego turnieju!", ephemeral=True)
+            return
+
+        tournament["players"].append(user_id)
+        left = self.limit - len(tournament["players"])
+
+        # Lista zapisanych graczy
+        signed_up_mentions = [f"<@{uid}>" for uid in tournament["players"]]
+        player_list_text = "\n".join(signed_up_mentions) or "Brak zapisanych graczy."
+
+        # Nowy embed z listą
+        embed = discord.Embed(
+            title=f"🎮 Turniej: {self.tournament_name}",
+            description=(
+                f"Kliknij przycisk, aby zapisać się do turnieju!\n"
+                f"**Pozostało miejsc:** {left}/{self.limit}\n\n"
+                f"**Zapisani gracze:**\n{player_list_text}"
+            ),
+            color=discord.Color.green()
+        )
+
+        if left <= 0:
+            for child in self.children:
+                child.disabled = True
+            await interaction.message.edit(embed=embed, view=self)
+            await interaction.response.send_message("✅ Zapisałeś się! Limit uczestników osiągnięty.", ephemeral=True)
+        else:
+            await interaction.message.edit(embed=embed, view=self)
+            await interaction.response.send_message(f"✅ Zapisałeś się! Pozostało miejsc: **{left}**", ephemeral=True)
 
 
 class ConfirmView(View):
@@ -431,6 +479,35 @@ async def medale(interaction: Interaction, user: discord.User = None):
     ephemeral = (user == interaction.user)
 
     await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
+#turniej#
+@bot.tree.command(name="stworz_turniej", description="Stwórz nowy turniej z zapisem")
+@app_commands.describe(nazwa="Nazwa turnieju", limit="Ile osób ma się zapisać?")
+async def stworz_turniej(interaction: Interaction, nazwa: str, limit: int):
+    # ✅ Sprawdzenie, czy użytkownik ma rolę "Turniej"
+    role_names = [role.name for role in interaction.user.roles]
+    if "Turniej" not in role_names:
+        await interaction.response.send_message("❌ Nie masz uprawnień do tworzenia turniejów.", ephemeral=True)
+        return
+
+    if limit < 2:
+        await interaction.response.send_message("❌ Minimalna liczba graczy to 2.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title=f"🎮 Turniej: {nazwa}",
+        description=f"Naciśnij przycisk poniżej, aby zapisać się do turnieju.\nLiczba miejsc: **{limit}**",
+        color=discord.Color.green()
+    )
+
+    placeholder_view = SignupButton(0, nazwa, limit)  # tymczasowy placeholder
+    message = await interaction.channel.send(embed=embed, view=placeholder_view)
+
+    # Zapisujemy turniej do słownika
+    tournaments[message.id] = {
+        "name": nazwa,
+        "limit": limit,
+        "players": []
+    }
 
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
