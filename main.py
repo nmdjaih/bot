@@ -245,7 +245,7 @@ class MatchAcceptView(ui.View):
         self.challenger_id = challenger_id
         self.message = None  # <- potrzebne do edytowania wiadomości po czasie
 
-    @ui.button(label="Akceptuj mecz", style=ButtonStyle.green)
+        @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.green)
     async def accept_match(self, interaction: Interaction, button: ui.Button):
         if interaction.user.id == self.challenger_id:
             await interaction.response.send_message("❌ Nie możesz zaakceptować własnego meczu.", ephemeral=True)
