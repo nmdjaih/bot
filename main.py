@@ -249,35 +249,34 @@ class MatchAcceptView(ui.View):
         self.message = None  # <- potrzebne do edytowania wiadomości po czasie
 
     @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.green)
-async def accept_match(self, interaction: Interaction, button: ui.Button):
-    if interaction.user.id == self.challenger_id:
-        await interaction.response.send_message("❌ Nie możesz zaakceptować własnego meczu.", ephemeral=True)
-        return
+    async def accept_match(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id == self.challenger_id:
+            await interaction.response.send_message("❌ Nie możesz zaakceptować własnego meczu.", ephemeral=True)
+            return
 
-    # Dodajemy do active_matches obie strony
-    active_matches[self.challenger_id] = interaction.user.id
-    active_matches[interaction.user.id] = self.challenger_id
+        # Dodajemy do active_matches obie strony
+        active_matches[self.challenger_id] = interaction.user.id
+        active_matches[interaction.user.id] = self.challenger_id
 
-    # Wyłączamy przyciski po zaakceptowaniu
-    for child in self.children:
-        child.disabled = True
+        # Wyłączamy przyciski po zaakceptowaniu
+        for child in self.children:
+            child.disabled = True
 
-    # Edytujemy oryginalną wiadomość
-    if self.message:
-        await self.message.edit(content="✅ Mecz zaakceptowany!", view=self)
+        # Edytujemy oryginalną wiadomość
+        if self.message:
+            await self.message.edit(content="✅ Mecz zaakceptowany!", view=self)
 
-    # 💡 Odczekaj 1 sekundę (Discord potrzebuje przerwy)
-    await asyncio.sleep(1)
+        # 💡 Odczekaj 1 sekundę (Discord potrzebuje przerwy)
+        await asyncio.sleep(1)
 
-    # Wyślij nową wiadomość z widokiem do wpisania wyniku
-    await interaction.followup.send(
-        embed=discord.Embed(
-            title="🏁 Mecz rozpoczęty!",
-            description=f"<@{self.challenger_id}> vs <@{interaction.user.id}>. Po meczu kliknij 'Wpisz wynik'."
-        ),
-        view=ResultView(self.challenger_id, interaction.user.id)
-    )
-
+        # Wyślij nową wiadomość z widokiem do wpisania wyniku
+        await interaction.followup.send(
+            embed=discord.Embed(
+                title="🏁 Mecz rozpoczęty!",
+                description=f"<@{self.challenger_id}> vs <@{interaction.user.id}>. Po meczu kliknij 'Wpisz wynik'."
+            ),
+            view=ResultView(self.challenger_id, interaction.user.id)
+        )
 
     async def on_timeout(self):
         if self.message:
