@@ -488,7 +488,7 @@ async def stworz_turniej(interaction: Interaction, nazwa: str, limit: int):
         color=discord.Color.green()
     )
 
-    placeholder_view = SignupButton(0, nazwa, limit)  # tymczasowy placeholder
+    view = SignupView(message.id)
     message = await interaction.channel.send(embed=embed, view=placeholder_view)
 
     # Zapisujemy turniej do słownika
