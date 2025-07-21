@@ -292,11 +292,21 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
         await interaction.response.send_message("Nie znaleziono roli 'Gracz'.", ephemeral=True)
         return
 
-    view = ResultView(interaction.user.id, 0)  # Zastępowane potem po zaakceptowaniu
-    await interaction.response.send_message(
+    # Utwórz widok z timeoutem
+    view = MatchAcceptView(interaction.user.id, timeout=czas * 60)
+
+    # Wyślij wiadomość z przyciskiem
+    msg = await interaction.response.send_message(
         f"{role.mention}\n<@{interaction.user.id}> szuka przeciwnika! Kliknij przycisk, aby zaakceptować mecz.",
-        view=MatchAcceptView(interaction.user.id, timeout=czas * 60)
+        view=view
     )
+
+    # Pobierz wiadomość, żeby przypisać do widoku (potrzebne do on_timeout)
+    view.message = await interaction.original_response()
+
+    # Zapisz gracza jako "szukającego"
+    active_matches[str(interaction.user.id)] = {"searching": True}
+
 
 @bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
 async def statystyki(interaction: Interaction):
