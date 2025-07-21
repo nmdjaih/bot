@@ -258,17 +258,25 @@ class MatchAcceptView(ui.View):
         active_matches[self.challenger_id] = interaction.user.id
         active_matches[interaction.user.id] = self.challenger_id
 
-        # Wyłączamy przycisk po zaakceptowaniu
-        for child in self.children:
-            child.disabled = True
-        if self.message:
-            await self.message.edit(content="✅ Mecz zaakceptowany!", view=self)
+         # Wyłączamy przycisk po zaakceptowaniu
+    for child in self.children:
+        child.disabled = True
 
-        # Wyślij nową wiadomość z widokiem na wpisanie wyniku
-        await interaction.followup.send(
-            f"Mecz między <@{self.challenger_id}> a <@{interaction.user.id}> rozpoczęty! Wpisz wynik po zakończeniu.",
-            view=ResultView(self.challenger_id, interaction.user.id)
-        )
+    # Edytujemy oryginalną wiadomość
+    if self.message:
+        await self.message.edit(content="✅ Mecz zaakceptowany!", view=self)
+
+    # 💡 Odczekaj 1 sekundę (Discord potrzebuje przerwy)
+    await asyncio.sleep(1)
+
+    # Wyślij nową wiadomość z widokiem do wpisania wyniku
+    await interaction.followup.send(
+        embed=discord.Embed(
+            title="🏁 Mecz rozpoczęty!",
+            description=f"<@{self.challenger_id}> vs <@{interaction.user.id}>. Po meczu kliknij 'Wpisz wynik'."
+        ),
+        view=ResultView(self.challenger_id, interaction.user.id)
+    )
 
     async def on_timeout(self):
         if self.message:
