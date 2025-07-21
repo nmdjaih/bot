@@ -239,7 +239,7 @@ async def confirm_button(self, interaction: Interaction, button: ui.Button):
     view = RematchView(player1=int(p1), player2=int(p2))
     await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
 
-cclass MatchAcceptView(ui.View):
+class MatchAcceptView(ui.View):
     def __init__(self, challenger_id: int, timeout: Optional[float] = 60):
         super().__init__(timeout=timeout)
         self.challenger_id = challenger_id
