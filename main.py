@@ -321,6 +321,8 @@ async def statystyki(interaction: Interaction, uzytkownik: Optional[discord.User
 
     total_matches = stats["wins"] + stats["losses"] + stats["draws"]
     win_rate = round((stats["wins"] / total_matches) * 100, 1) if total_matches > 0 else 0.0
+    avg_goals_scored = round(stats["goals_scored"] / total_matches, 2) if total_matches > 0 else 0.0
+    avg_goals_conceded = round(stats["goals_conceded"] / total_matches, 2) if total_matches > 0 else 0.0
 
     embed = discord.Embed(
         title=f"📊 Statystyki {user.display_name}",
@@ -334,13 +336,14 @@ async def statystyki(interaction: Interaction, uzytkownik: Optional[discord.User
     embed.add_field(name="⚽ Gole zdobyte", value=str(stats["goals_scored"]))
     embed.add_field(name="🛡️ Gole stracone", value=str(stats["goals_conceded"]))
     embed.add_field(name="📊 Mecze łącznie", value=str(total_matches), inline=False)
-    embed.add_field(name="📈 Win ratio", value=f"{win_rate}%", inline=False)
+    embed.add_field(name="📈 Skuteczność", value=f"{win_rate}%", inline=False)
+    embed.add_field(name="🎯 Śr. gole zdobyte/mecz", value=str(avg_goals_scored))
+    embed.add_field(name="🧱 Śr. gole stracone/mecz", value=str(avg_goals_conceded))
 
     await interaction.response.send_message(
         embed=embed,
-        ephemeral=(uzytkownik is None)  # tylko do siebie, jeśli nie podano gracza
+        ephemeral=(uzytkownik is None)
     )
-
 
 
 @bot.tree.command(name="ranking", description="Wyświetl ranking")
