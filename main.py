@@ -2,7 +2,7 @@
 
 import discord
 from discord.ext import commands
-from discord import app_commands, ui, Interaction
+from discord import app_commands, ui, Interaction, User
 from discord.ui import View
 import os
 from dotenv import load_dotenv
@@ -556,6 +556,59 @@ async def mute(interaction: Interaction, user: discord.Member, time: str, reason
     except Exception as e:
         await interaction.response.send_message(f"❌ Nie udało się wyciszyć użytkownika: {e}", ephemeral=True)
 
+#mecz do wpisania#
+@bot.tree.command(name="wynik", description="Wpisz wynik meczu między dwoma graczami")
+@app_commands.describe(
+    gracz1="Pierwszy gracz",
+    gracz2="Drugi gracz",
+    wynik="Wynik w formacie X-Y, np. 2-1"
+)
+async def wynik(interaction: Interaction, gracz1: User, gracz2: User, wynik: str):
+    role_names = [role.name for role in interaction.user.roles]
+    if "Admin" not in role_names:
+        await interaction.response.send_message(
+            "❌ Nie masz uprawnień do użycia tej komendy. Potrzebna jest rola Admin.",
+            ephemeral=True
+        )
+        return
+
+    # Walidacja wyniku
+    if wynik.count("-") != 1:
+        await interaction.response.send_message(
+            "❌ Podaj wynik w formacie `X-Y`, np. `2-1`.", ephemeral=True
+        )
+        return
+
+    score1_str, score2_str = wynik.split("-")
+    if not (score1_str.isdigit() and score2_str.isdigit()):
+        await interaction.response.send_message(
+            "❌ Wynik musi zawierać tylko cyfry, np. `2-1`.", ephemeral=True
+        )
+        return
+
+    score1, score2 = int(score1_str), int(score2_str)
+
+    if gracz1.id == gracz2.id:
+        await interaction.response.send_message(
+            "❌ Nie możesz podać meczu, w którym obaj gracze to ta sama osoba.", ephemeral=True
+        )
+        return
+
+    # Aktualizacja statystyk - dopasuj do swojego kodu
+    if score1 > score2:
+        await update_player_stats(str(gracz1.id), wins=1, goals_scored=score1, goals_conceded=score2)
+        await update_player_stats(str(gracz2.id), losses=1, goals_scored=score2, goals_conceded=score1)
+    elif score2 > score1:
+        await update_player_stats(str(gracz2.id), wins=1, goals_scored=score2, goals_conceded=score1)
+        await update_player_stats(str(gracz1.id), losses=1, goals_scored=score1, goals_conceded=score2)
+    else:
+        await update_player_stats(str(gracz1.id), draws=1, goals_scored=score1, goals_conceded=score2)
+        await update_player_stats(str(gracz2.id), draws=1, goals_scored=score2, goals_conceded=score1)
+
+    await interaction.response.send_message(
+        f"✅ Zapisano wynik meczu:\n{gracz1.mention} **{score1}** - **{score2}** {gracz2.mention}",
+        ephemeral=True
+    )
 
 
 #unmute#
