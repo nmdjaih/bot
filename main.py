@@ -313,16 +313,34 @@ async def gram(interaction: Interaction, czas: Optional[int] = 3):
     active_matches[str(interaction.user.id)] = {"searching": True}
 
 
-@bot.tree.command(name="statystyki", description="Sprawdź swoje statystyki")
-async def statystyki(interaction: Interaction):
-    stats = await get_player_stats(str(interaction.user.id))  # <--- tu await
-    embed = discord.Embed(title=f"Statystyki {interaction.user.display_name}", color=discord.Color.blue())
-    embed.add_field(name="Wygrane", value=str(stats["wins"]))
-    embed.add_field(name="Przegrane", value=str(stats["losses"]))
-    embed.add_field(name="Remisy", value=str(stats["draws"]))
-    embed.add_field(name="Gole zdobyte", value=str(stats["goals_scored"]))
-    embed.add_field(name="Gole stracone", value=str(stats["goals_conceded"]))
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+@bot.tree.command(name="statystyki", description="Sprawdź swoje lub cudze statystyki")
+@app_commands.describe(uzytkownik="Gracz, którego statystyki chcesz sprawdzić")
+async def statystyki(interaction: Interaction, uzytkownik: Optional[discord.User] = None):
+    user = uzytkownik or interaction.user
+    stats = await get_player_stats(str(user.id))
+
+    total_matches = stats["wins"] + stats["losses"] + stats["draws"]
+    win_rate = round((stats["wins"] / total_matches) * 100, 1) if total_matches > 0 else 0.0
+
+    embed = discord.Embed(
+        title=f"📊 Statystyki {user.display_name}",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=user.display_avatar.url)
+
+    embed.add_field(name="✅ Wygrane", value=str(stats["wins"]))
+    embed.add_field(name="➗ Remisy", value=str(stats["draws"]))
+    embed.add_field(name="❌ Przegrane", value=str(stats["losses"]))
+    embed.add_field(name="⚽ Gole zdobyte", value=str(stats["goals_scored"]))
+    embed.add_field(name="🛡️ Gole stracone", value=str(stats["goals_conceded"]))
+    embed.add_field(name="📊 Mecze łącznie", value=str(total_matches), inline=False)
+    embed.add_field(name="📈 Win ratio", value=f"{win_rate}%", inline=False)
+
+    await interaction.response.send_message(
+        embed=embed,
+        ephemeral=(uzytkownik is None)  # tylko do siebie, jeśli nie podano gracza
+    )
+
 
 
 @bot.tree.command(name="ranking", description="Wyświetl ranking")
