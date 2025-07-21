@@ -245,7 +245,7 @@ class MatchAcceptView(ui.View):
         self.challenger_id = challenger_id
         self.message = None  # <- potrzebne do edytowania wiadomości po czasie
 
-        @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.green)
+    @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.green)
     async def accept_match(self, interaction: Interaction, button: ui.Button):
         if interaction.user.id == self.challenger_id:
             await interaction.response.send_message("❌ Nie możesz zaakceptować własnego meczu.", ephemeral=True)
@@ -254,6 +254,10 @@ class MatchAcceptView(ui.View):
         # Dodajemy do active_matches obie strony
         active_matches[self.challenger_id] = interaction.user.id
         active_matches[interaction.user.id] = self.challenger_id
+
+        # Wyłączamy przyciski po zaakceptowaniu
+        for child in self.children:
+            child.disabled = True
 
         # Edytujemy oryginalną wiadomość z widokiem (przyciskami)
         if self.message:
@@ -279,6 +283,7 @@ class MatchAcceptView(ui.View):
         entry = active_matches.get(str(self.challenger_id))
         if isinstance(entry, dict) and entry.get("searching"):
             del active_matches[str(self.challenger_id)]
+
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
 ### === KOMENDA /GRAM === ###
 @bot.tree.command(name="gram", description="Szukaj przeciwnika")
