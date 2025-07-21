@@ -555,7 +555,7 @@ async def mute(interaction: Interaction, user: discord.Member, time: str, reason
         )
     except Exception as e:
         await interaction.response.send_message(f"❌ Nie udało się wyciszyć użytkownika: {e}", ephemeral=True)
-)
+
 
 
 #unmute#
