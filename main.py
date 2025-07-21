@@ -239,10 +239,14 @@ async def confirm_button(self, interaction: Interaction, button: ui.Button):
     view = RematchView(player1=int(p1), player2=int(p2))
     await interaction.response.send_message(f"✅ Wynik potwierdzony! {msg}\nKliknij, aby zagrać rewanż:", view=view)
 
+from typing import Optional, cast
+from discord import Interaction, ui
+
 class MatchAcceptView(ui.View):
-    def __init__(self, challenger_id: int, timeout: Optional[float] = None):
+    def __init__(self, challenger_id: int, timeout: Optional[float] = 60):
         super().__init__(timeout=timeout)
         self.challenger_id = challenger_id
+        self.message = None  # <- potrzebne do edytowania wiadomości po czasie
 
     @ui.button(label="Akceptuj mecz", style=discord.ButtonStyle.green)
     async def accept_match(self, interaction: Interaction, button: ui.Button):
@@ -254,11 +258,29 @@ class MatchAcceptView(ui.View):
         active_matches[self.challenger_id] = interaction.user.id
         active_matches[interaction.user.id] = self.challenger_id
 
-        # Wyślij wiadomość potwierdzającą rozpoczęcie meczu
-        await interaction.response.send_message(
+        # Wyłączamy przycisk po zaakceptowaniu
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            await self.message.edit(content="✅ Mecz zaakceptowany!", view=self)
+
+        # Wyślij nową wiadomość z widokiem na wpisanie wyniku
+        await interaction.followup.send(
             f"Mecz między <@{self.challenger_id}> a <@{interaction.user.id}> rozpoczęty! Wpisz wynik po zakończeniu.",
             view=ResultView(self.challenger_id, interaction.user.id)
         )
+
+    async def on_timeout(self):
+        if self.message:
+            for child in self.children:
+                button = cast(ui.Button, child)
+                button.disabled = True
+            await self.message.edit(content="⌛ Czas na znalezienie przeciwnika minął.", view=self)
+
+        # Usuwamy z active_matches jeśli nadal szukał
+        entry = active_matches.get(str(self.challenger_id))
+        if isinstance(entry, dict) and entry.get("searching"):
+            del active_matches[str(self.challenger_id)]
 
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
 ### === KOMENDA /GRAM === ###
