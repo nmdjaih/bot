@@ -288,7 +288,19 @@ class MatchAcceptView(ui.View):
             del active_matches[str(self.challenger_id)]
 
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
-### === KOMENDA /GRAM === ###
+
+@bot.tree.command(name="sprawdz", description="Pokaż Discord User ID wybranego użytkownika")
+@app_commands.describe(uzytkownik="Użytkownik, którego ID chcesz zobaczyć")
+async def sprawdz(interaction: discord.Interaction, uzytkownik: discord.User):
+    # Sprawdzamy, czy wywołujący ma rolę 'Admin'
+    role_names = [role.name for role in interaction.user.roles]
+    if "Admin" not in role_names:
+        await interaction.response.send_message("❌ Nie masz uprawnień, aby użyć tej komendy.", ephemeral=True)
+        return
+
+    # Jeśli jest adminem, pokazujemy user ID
+    await interaction.response.send_message(f"User ID użytkownika {uzytkownik.mention} to `{uzytkownik.id}`", ephemeral=True)
+
 @bot.tree.command(name="gram", description="Szukaj przeciwnika")
 @app_commands.describe(czas="Czas oczekiwania w minutach (domyślnie 3)")
 async def gram(interaction: Interaction, czas: Optional[int] = 3):
