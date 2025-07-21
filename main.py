@@ -12,7 +12,7 @@ import asyncio
 import aiohttp
 from typing import Optional
 from typing import cast
-
+from datetime import timedelta
 
 load_dotenv()
 
@@ -518,6 +518,60 @@ async def stworz_turniej(interaction: Interaction, nazwa: str, limit: int):
     }
 
     await interaction.response.send_message("✅ Turniej utworzony!", ephemeral=True)
+
+#mute#
+bot.tree.command(name="mute", description="Wycisza użytkownika na określony czas.")
+@app_commands.describe(
+    user="Użytkownik do wyciszenia",
+    time="Czas wyciszenia (np. 10m, 1h, 1d)",
+    reason="Powód wyciszenia"
+)
+async def mute(interaction: Interaction, user: discord.Member, time: str, reason: str = "Brak powodu"):
+    allowed_roles = ["Admin", "Helper"]
+    user_roles = [role.name for role in interaction.user.roles]
+
+    if not any(role in allowed_roles for role in user_roles):
+        await interaction.response.send_message("❌ Nie masz uprawnień do użycia tej komendy.", ephemeral=True)
+        return
+
+    # Konwersja czasu
+    units = {"m": 60, "h": 3600, "d": 86400}
+    try:
+        unit = time[-1]
+        amount = int(time[:-1])
+        if unit not in units:
+            raise ValueError
+        duration = timedelta(seconds=amount * units[unit])
+    except ValueError:
+        await interaction.response.send_message("❌ Podaj czas w formacie np. `10m`, `1h`, `1d`.", ephemeral=True)
+        return
+
+    try:
+        await user.timeout(duration, reason=reason)
+        await interaction.response.send_message(f"🔇 {user.mention} został wyciszony na **{time}**.\n📄 Powód: {reason}")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Nie udało się wyciszyć użytkownika: {e}", ephemeral=True)
+
+
+#unmute#
+@bot.tree.command(name="unmute", description="Usuwa wyciszenie z użytkownika.")
+@app_commands.describe(
+    user="Użytkownik do odciszenia",
+    reason="Powód odciszenia"
+)
+async def unmute(interaction: Interaction, user: discord.Member, reason: str = "Brak powodu"):
+    allowed_roles = ["Admin", "Helper"]
+    user_roles = [role.name for role in interaction.user.roles]
+
+    if not any(role in allowed_roles for role in user_roles):
+        await interaction.response.send_message("❌ Nie masz uprawnień do użycia tej komendy.", ephemeral=True)
+        return
+
+    try:
+        await user.timeout(None, reason=reason)
+        await interaction.response.send_message(f"🔊 {user.mention} został odciszony.\n📄 Powód: {reason}")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Nie udało się odciszyć użytkownika: {e}", ephemeral=True)
 
 ### === BOT ONLINE I SERWER DLA RENDERA === ###
 @bot.event
