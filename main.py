@@ -30,12 +30,22 @@ tournaments = {}  # message_id: {name, limit, players}
 
 ### === MODAL: WPROWADZENIE WYNIKU === ###
 class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
-    score1 = ui.TextInput(label="Gole pierwszego gracza", style=discord.TextStyle.short)
-    score2 = ui.TextInput(label="Gole drugiego gracza", style=discord.TextStyle.short)
-
-    def __init__(self, match_info):
+    def __init__(self, match_info, player1_name: str, player2_name: str):
         super().__init__()
         self.match_info = match_info
+
+        # Pola tekstowe z nazwami graczy
+        self.score1 = ui.TextInput(
+            label=f"Gole: {player1_name}",
+            style=discord.TextStyle.short
+        )
+        self.score2 = ui.TextInput(
+            label=f"Gole: {player2_name}",
+            style=discord.TextStyle.short
+        )
+
+        self.add_item(self.score1)
+        self.add_item(self.score2)
 
     async def on_submit(self, interaction: Interaction):
         p1 = self.match_info["player1"]
@@ -254,7 +264,17 @@ class ResultView(ui.View):
 
     @ui.button(label="Wpisz wynik", style=discord.ButtonStyle.primary)
     async def enter_score(self, interaction: Interaction, button: ui.Button):
-        await interaction.response.send_modal(ScoreModal(self.match_info))
+        # Pobieranie nazw graczy z Discorda
+        player1 = await interaction.client.fetch_user(self.match_info["player1"])
+        player2 = await interaction.client.fetch_user(self.match_info["player2"])
+
+        # Wywołanie ScoreModal z nazwami
+        await interaction.response.send_modal(ScoreModal(
+            self.match_info,
+            player1.display_name,
+            player2.display_name
+        ))
+
 
 
 @ui.button(label="Potwierdź wynik", style=discord.ButtonStyle.green)
