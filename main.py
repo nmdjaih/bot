@@ -22,7 +22,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
-
+TOKEN = os.getenv("TOKEN")
 active_matches = {}  # user_id: opponent_id
 pending_results = {}  # match_key: wynik
 confirmed_matches = set()  # para potwierdzonych meczy
