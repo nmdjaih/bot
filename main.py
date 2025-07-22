@@ -13,6 +13,8 @@ import aiohttp
 from typing import Optional
 from typing import cast
 from datetime import timedelta
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 load_dotenv()
 
@@ -25,6 +27,7 @@ active_matches = {}  # user_id: opponent_id
 pending_results = {}  # match_key: wynik
 confirmed_matches = set()  # para potwierdzonych meczy
 tournaments = {}  # message_id: {name, limit, players}
+CHANNEL_ID = 1397154952903917658  # ID twojego kanału
 
 
 
@@ -649,7 +652,23 @@ async def unmute(interaction: Interaction, user: discord.Member):
     except Exception as e:
         await interaction.response.send_message(f"❌ Nie udało się odciszyć użytkownika: {e}", ephemeral=True)
 
-### === BOT ONLINE I SERWER DLA RENDERA === ###
+# Funkcja wysyłająca wiadomość co 5 minut
+async def ping_channel_loop():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+
+    if channel is None:
+        print("❌ Nie znaleziono kanału. Sprawdź ID.")
+        return
+
+    while not bot.is_closed():
+        try:
+            await channel.send("✅ Bot działa poprawnie.")
+        except Exception as e:
+            print(f"Błąd przy wysyłaniu wiadomości: {e}")
+        await asyncio.sleep(300)  # 5 minut
+
+# Event uruchamiany po starcie bota
 @bot.event
 async def on_ready():
     print(f"Zalogowano jako {bot.user} (ID: {bot.user.id})")
@@ -659,27 +678,27 @@ async def on_ready():
     except Exception as e:
         print(f"Błąd synchronizacji komend: {e}")
 
+    # Uruchom pętlę pingującą kanał
+    bot.loop.create_task(ping_channel_loop())
+
+# Webserver do Render (aby bot nie zasypiał)
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Discord bot is running.')
+
+def start_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    print(f"Fake web server running on port {port}")
+    server.serve_forever()
+
 if __name__ == "__main__":
-    TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         print("Błąd: Brak tokena w .env")
         exit(1)
-    
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    class DummyHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'Discord bot is running.')
-
-    def start_web_server():
-        port = int(os.environ.get("PORT", 10000))
-        server = HTTPServer(("0.0.0.0", port), DummyHandler)
-        print(f"Fake web server running on port {port}")
-        server.serve_forever()
 
     threading.Thread(target=start_web_server, daemon=True).start()
-
     bot.run(TOKEN)
+
