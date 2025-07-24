@@ -541,6 +541,12 @@ async def medale(interaction: Interaction, user: discord.User = None):
     stats = await get_player_stats(str(user.id))
 
     medals = []
+
+    # Tu dodajemy medal za Booster
+    booster_role = discord.utils.get(interaction.guild.roles, name="Booster")
+    if booster_role in user.roles:
+        medals.append("🚀 Booster – wspiera serwer rolą Boostera")
+    
     wins = stats.get("wins", 0)
     total = stats["wins"] + stats["losses"] + stats["draws"]
     goals = stats["goals_scored"]
@@ -566,6 +572,8 @@ async def medale(interaction: Interaction, user: discord.User = None):
     if losses >= 50: medals.append("🧹 Zamiatany – 50 porażek")
     if losses >= 100: medals.append("🪦 Król Przegranych – 100 porażek")
 
+
+    
     if draws >= 5: medals.append("🤝 Dyplomata – 5 remisów")
     if draws >= 20: medals.append("😐 Wieczny Remis – 20 remisów")
     if draws >= 50: medals.append("💤 Król Nudy – 50 remisów")
