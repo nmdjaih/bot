@@ -29,6 +29,22 @@ confirmed_matches = set()  # para potwierdzonych meczy
 tournaments = {}  # message_id: {name, limit, players}
 CHANNEL_ID = 1397154952903917658  # ID twojego kanału
 
+MEDALE = {
+    "zwyciezca_turnieju_1": {
+        "nazwa": "🏆 Zwycięzca Pierwszego Turnieju",
+        "kolor": 0xFFD700
+    },
+    "uczestnik_turnieju_1": {
+        "nazwa": "🎖️ Uczestnik Pierwszego Turnieju",
+        "kolor": 0xAAAAAA
+    },
+    "krol_strzelcow_turnieju_1": {
+        "nazwa": "👑 Król Strzelców Pierwszego Turnieju",
+        "kolor": 0xFF4500
+    }
+}
+awarded_medals = {}  # user_id (str) : list of medal_id (np. ["zwyciezca_turnieju_1"])
+
 
 
 ### === MODAL: WPROWADZENIE WYNIKU === ###
@@ -133,6 +149,51 @@ class SignupView(discord.ui.View):
         
         await interaction.response.send_message("✅ Zapisano do turnieju!", ephemeral=True)
 
+class ChallengeAcceptView(ui.View):
+    def __init__(self, challenger: int, opponent: int, timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.challenger = challenger
+        self.opponent = opponent
+        self.message = None
+
+    @ui.button(label="Akceptuj wyzwanie", style=discord.ButtonStyle.success)
+    async def accept(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id != self.opponent:
+            await interaction.response.send_message(
+                "❌ Nie możesz zaakceptować tego wyzwania – nie jesteś wyzwanym graczem.",
+                ephemeral=True
+            )
+            return
+
+        # Zabezpieczenie – czy nie są już w meczu
+        if str(self.challenger) in active_matches or str(self.opponent) in active_matches:
+            await interaction.response.send_message("❌ Ktoś z was już jest w meczu.", ephemeral=True)
+            return
+
+        active_matches[self.challenger] = self.opponent
+        active_matches[self.opponent] = self.challenger
+
+        for child in self.children:
+            child.disabled = True
+        if self.message:
+            await self.message.edit(content="✅ Wyzwanie zaakceptowane!", view=self)
+
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="🏁 Mecz rozpoczęty!",
+                description=f"<@{self.challenger}> vs <@{self.opponent}>. Po meczu kliknij 'Wpisz wynik'."
+            ),
+            view=ResultView(self.challenger, self.opponent)
+        )
+
+    async def on_timeout(self):
+        if self.message:
+            for child in self.children:
+                child.disabled = True
+            await self.message.edit(content="⌛ Czas na akceptację wyzwania minął.", view=self)
+
+        if str(self.challenger) in active_matches:
+            del active_matches[str(self.challenger)]
 
 
 class ConfirmView(View):
@@ -359,6 +420,27 @@ class MatchAcceptView(ui.View):
         entry = active_matches.get(str(self.challenger_id))
         if isinstance(entry, dict) and entry.get("searching"):
             del active_matches[str(self.challenger_id)]
+#wyzwij#
+@bot.tree.command(name="wyzwij", description="Wyzwanie konkretnego gracza na mecz")
+@app_commands.describe(gracz="Gracz, którego chcesz wyzwać")
+async def wyzwij(interaction: Interaction, gracz: discord.User):
+    if gracz.id == interaction.user.id:
+        await interaction.response.send_message("❌ Nie możesz wyzwać samego siebie.", ephemeral=True)
+        return
+
+    if str(interaction.user.id) in active_matches or str(gracz.id) in active_matches:
+        await interaction.response.send_message("❌ Ty lub przeciwnik już jesteście w meczu lub szukacie przeciwnika.", ephemeral=True)
+        return
+
+    view = ChallengeAcceptView(challenger=interaction.user.id, opponent=gracz.id)
+    msg = await interaction.channel.send(
+        f"<@{gracz.id}>, <@{interaction.user.id}> wyzwał Cię na pojedynek! Kliknij, aby zaakceptować.",
+        view=view
+    )
+    view.message = msg
+
+    await interaction.response.send_message("✅ Wyzwanie wysłane!", ephemeral=True)
+
 
 ### === KOMENDY /STATYSTYKI I /RANKING === ###
 
@@ -487,6 +569,11 @@ async def medale(interaction: Interaction, user: discord.User = None):
     if draws >= 5: medals.append("🤝 Dyplomata – 5 remisów")
     if draws >= 20: medals.append("😐 Wieczny Remis – 20 remisów")
     if draws >= 50: medals.append("💤 Król Nudy – 50 remisów")
+    user_medals = awarded_medals.get(str(user.id), [])
+    for key in user_medals:
+        medal_info = MEDALE.get(key)
+        if medal_info and medal_info["nazwa"] not in medals:
+            medals.append(medal_info["nazwa"])
 
     if not medals:
         medals_text = "Brak medali — graj więcej!"
@@ -630,6 +717,80 @@ async def wynik(interaction: Interaction, gracz1: User, gracz2: User, wynik: str
 
     await interaction.response.send_message(
         f"✅ Zapisano wynik meczu:\n{gracz1.mention} **{score1}** - **{score2}** {gracz2.mention}",
+        ephemeral=True
+    )
+#medal#
+@bot.tree.command(name="medal", description="Przyznaj graczowi medal")
+@app_commands.describe(
+    użytkownik="Gracz, któremu chcesz przyznać medal",
+    medal="Rodzaj medalu"
+)
+@app_commands.choices(
+    medal=[
+        app_commands.Choice(name=data["nazwa"], value=medal_id)
+        for medal_id, data in MEDALE.items()
+    ]
+)
+async def medal(interaction: Interaction, użytkownik: discord.User, medal: app_commands.Choice[str]):
+    admin_role = discord.utils.get(interaction.guild.roles, name="Admin")
+    if not admin_role or admin_role not in interaction.user.roles:
+        await interaction.response.send_message("❌ Ta komenda jest tylko dla osób z rolą **Admin**.", ephemeral=True)
+        return
+
+    medal_data = MEDALE.get(medal.value)
+    if not medal_data:
+        await interaction.response.send_message("❌ Taki medal nie istnieje.", ephemeral=True)
+        return
+
+    # Dodaj medal do awarded_medals
+    user_medals = awarded_medals.setdefault(str(użytkownik.id), [])
+    if medal.value in user_medals:
+        await interaction.response.send_message(f"Użytkownik już ma medal {medal_data['nazwa']}.", ephemeral=True)
+        return
+    user_medals.append(medal.value)
+
+    embed = discord.Embed(
+        title="🥇 Medal Przyznany!",
+        description=f"{medal_data['nazwa']}\nGratulacje dla <@{użytkownik.id}>!",
+        color=medal_data["kolor"]
+    )
+    embed.set_thumbnail(url=użytkownik.display_avatar.url)
+    embed.set_footer(text=f"Przyznane przez {interaction.user.display_name}")
+
+    await interaction.response.send_message(embed=embed)
+#usun medal#
+@bot.tree.command(name="usun_medal", description="Usuń medal od gracza")
+@app_commands.describe(
+    użytkownik="Gracz, od którego chcesz usunąć medal",
+    medal="Rodzaj medalu do usunięcia"
+)
+@app_commands.choices(
+    medal=[
+        app_commands.Choice(name=data["nazwa"], value=medal_id)
+        for medal_id, data in MEDALE.items()
+    ]
+)
+async def usun_medal(interaction: Interaction, użytkownik: discord.User, medal: app_commands.Choice[str]):
+    # Blokada: tylko rola Admin
+    admin_role = discord.utils.get(interaction.guild.roles, name="Admin")
+    if not admin_role or admin_role not in interaction.user.roles:
+        await interaction.response.send_message("❌ Ta komenda jest tylko dla osób z rolą **Admin**.", ephemeral=True)
+        return
+
+    user_id_str = str(użytkownik.id)
+    if user_id_str not in awarded_medals or medal.value not in awarded_medals[user_id_str]:
+        await interaction.response.send_message(f"❌ Użytkownik nie posiada medalu **{MEDALE[medal.value]['nazwa']}**.", ephemeral=True)
+        return
+
+    # Usuwamy medal
+    awarded_medals[user_id_str].remove(medal.value)
+
+    # Jeśli lista medali jest pusta, usuń klucz, aby nie zaśmiecać
+    if not awarded_medals[user_id_str]:
+        del awarded_medals[user_id_str]
+
+    await interaction.response.send_message(
+        f"✅ Usunięto medal **{MEDALE[medal.value]['nazwa']}** od <@{użytkownik.id}>.",
         ephemeral=True
     )
 
