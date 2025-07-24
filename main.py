@@ -543,7 +543,7 @@ async def medale(interaction: Interaction, user: discord.User = None):
     medals = []
 
     # Tu dodajemy medal za Booster
-    booster_role = discord.utils.get(interaction.guild.roles, name="Booster")
+    booster_role = discord.utils.get(interaction.guild.roles, name="Server Booster")
     if booster_role in user.roles:
         medals.append("🚀 Booster – wspiera serwer rolą Boostera")
     
