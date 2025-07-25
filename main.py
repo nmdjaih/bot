@@ -93,7 +93,7 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             "player2": p2,
             "score1": s1,
             "score2": s2,
-            "confirmed": False
+            "confirmed": False,
             "reported_by": interaction.user.id  # kto zgłosił
         }
 
