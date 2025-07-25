@@ -94,6 +94,7 @@ class ScoreModal(ui.Modal, title="Wpisz wynik meczu"):
             "score1": s1,
             "score2": s2,
             "confirmed": False
+            "reported_by": interaction.user.id  # kto zgłosił
         }
 
         view = ConfirmView(p1, p2, s1, s2, match_key)
@@ -215,6 +216,11 @@ class ConfirmView(View):
         if not match_info or match_info.get("confirmed", False):
             await interaction.response.send_message("❌ Ten wynik już został potwierdzony.", ephemeral=True)
             return
+
+        if match_info["reported_by"] == interaction.user.id:
+            await interaction.response.send_message("❌ Nie możesz potwierdzić własnego zgłoszenia wyniku.", ephemeral=True)
+            return
+
 
         # Aktualizacja statystyk
         p1_stats = {
